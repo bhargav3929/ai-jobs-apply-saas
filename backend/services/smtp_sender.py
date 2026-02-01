@@ -73,9 +73,12 @@ def send_via_smtp(user_smtp: str, user_password: str, recipient: str,
         else:
             logger.warning("No resume attached to email")
 
-        # Send via SMTP
-        logger.info("Connecting to smtp.gmail.com:465 (SSL)...")
-        with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
+        # Send via SMTP (STARTTLS on 587 — Railway blocks port 465)
+        logger.info("Connecting to smtp.gmail.com:587 (STARTTLS)...")
+        with smtplib.SMTP('smtp.gmail.com', 587, timeout=15) as server:
+            server.ehlo()
+            server.starttls()
+            server.ehlo()
             logger.info("Connected. Logging in...")
             server.login(user_smtp, user_password)
             logger.info("Login successful. Sending message...")

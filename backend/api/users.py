@@ -54,8 +54,11 @@ async def setup_smtp(data: dict, authorization: str = Header(None)):
         import socket
         
         def test_smtp_connection():
-            # Set timeout to 10 seconds to avoid infinite loading
-            with smtplib.SMTP_SSL('smtp.gmail.com', 465, timeout=10) as server:
+            # Use STARTTLS on port 587 (Railway blocks port 465)
+            with smtplib.SMTP('smtp.gmail.com', 587, timeout=10) as server:
+                server.ehlo()
+                server.starttls()
+                server.ehlo()
                 server.login(smtp_email, smtp_password)
                 
         # Run blocking call in threadpool
