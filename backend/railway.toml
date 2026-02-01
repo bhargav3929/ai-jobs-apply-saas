@@ -1,0 +1,28 @@
+[build]
+builder = "NIXPACKS"
+
+[deploy]
+startCommand = "uvicorn main:app --host 0.0.0.0 --port $PORT"
+healthcheckPath = "/health"
+healthcheckTimeout = 100
+restartPolicyType = "ON_FAILURE"
+
+[env]
+PORT = "8000"
+ENVIRONMENT = "production"
+
+# Cron Jobs
+[[crons]]
+name = "daily-scraper"
+schedule = "0 8 * * *"  # 8 AM UTC
+command = "python -m cron.daily_scraper"
+
+[[crons]]
+name = "job-distributor"
+schedule = "30 8 * * *"  # 8:30 AM UTC
+command = "python -m cron.job_distributor"
+
+[[crons]]
+name = "cleanup"
+schedule = "0 0 * * *"  # Midnight
+command = "python -m cron.cleanup"
