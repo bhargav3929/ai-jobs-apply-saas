@@ -7,12 +7,9 @@
 
 export type JobCategory =
     | "Software Developer"
-    | "Marketing"
     | "AI/ML Engineer"
-    | "Customer Support"
-    | "Sales"
-    | "Design"
-    | "Data Analyst";
+    | "Marketing/Sales"
+    | "Design";
 
 export type SubscriptionStatus = "active" | "paused" | "cancelled";
 
@@ -85,7 +82,7 @@ export interface Application {
     // Email Content
     emailSubject: string;
     emailBody: string;
-    templateId: number; // 1-60 template variants
+    templateId: number; // 1-70 template variants
 
     // Status
     sentAt: string;

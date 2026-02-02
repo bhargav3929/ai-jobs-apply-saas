@@ -19,7 +19,7 @@ def generate_email_with_ai(user: dict, job: dict) -> dict:
     logger.info(f"Generating email for user='{user_name}' job='{job_title[:60]}'")
 
     # Step 1: Get random template (1-60)
-    template_id = random.randint(1, 60)
+    template_id = random.randint(1, 70)
     template = {}
     logger.info(f"Selected template ID: {template_id}")
 

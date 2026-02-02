@@ -20,13 +20,17 @@ class JobClassifier:
     CATEGORIES = [
         "Software Developer",
         "AI/ML Engineer",
-        "Marketing",
-        "Customer Support",
-        "Sales",
+        "Marketing/Sales",
         "Design",
-        "Data Analyst",
         "Other"
     ]
+
+    # Remap legacy categories to new ones
+    CATEGORY_REMAP = {
+        "Marketing": "Marketing/Sales",
+        "Customer Support": "Marketing/Sales",
+        "Sales": "Marketing/Sales",
+    }
 
     def __init__(self):
         self.client = AsyncOpenAI(
@@ -114,10 +118,12 @@ class JobClassifier:
 
         if not ai_result:
             # AI failed entirely — fall back to keywords only
+            fallback_cat = kw_winner if kw_winner else "Other"
+            fallback_cat = self._apply_remap(fallback_cat)
             return {
                 "title": self._extract_title_fallback(post_text),
                 "company": "Unknown",
-                "category": kw_winner if kw_winner else "Other",
+                "category": fallback_cat,
             }
 
         # Step 3: Cross-validation
@@ -128,6 +134,7 @@ class JobClassifier:
             scores=scores,
         )
 
+        final_category = self._apply_remap(final_category)
         ai_result["category"] = final_category
         return ai_result
 
@@ -165,17 +172,12 @@ class JobClassifier:
             "computer vision. Key signals: TensorFlow, PyTorch, model training, fine-tuning, "
             "prompt engineering, RAG, embeddings, neural networks.\n\n"
 
-            "- **Marketing**: Digital marketing, SEO, SEM, content writing, copywriting, "
-            "social media management, growth/performance marketing, email marketing.\n\n"
-
-            "- **Customer Support**: Customer support, customer success, helpdesk, tech support.\n\n"
-
-            "- **Sales**: Sales roles, business development (BDE/BDM/SDR), account management.\n\n"
+            "- **Marketing/Sales**: Digital marketing, SEO, SEM, content writing, copywriting, "
+            "social media management, growth/performance marketing, email marketing, "
+            "sales roles, business development (BDE/BDM/SDR), account management, "
+            "customer support, customer success.\n\n"
 
             "- **Design**: UI/UX, product design, graphic design, motion design, visual design.\n\n"
-
-            "- **Data Analyst**: Data analysis, business analysis, BI, SQL-focused reporting roles. "
-            "NOT data science or ML (those go to AI/ML Engineer).\n\n"
 
             "- **Other**: ONLY if the role truly doesn't fit any above (HR, legal, finance, etc.). "
             "When in doubt between two categories, pick the best match — never default to Other.\n\n"
@@ -274,6 +276,13 @@ class JobClassifier:
                        "Hiring", "Urgent hiring", "Immediate hiring", "Looking for"]:
             first_line = first_line.replace(prefix, "").strip()
         return first_line[:100] if first_line else "Unknown Role"
+
+    def _apply_remap(self, category: str) -> str:
+        """Remap legacy categories. Data Analyst gets split 60/40 AI/ML vs SW Dev."""
+        import random
+        if category == "Data Analyst":
+            return "AI/ML Engineer" if random.random() < 0.6 else "Software Developer"
+        return self.CATEGORY_REMAP.get(category, category)
 
     async def classify(self, post_text: str) -> str:
         """Classify job post into one category (legacy method)."""

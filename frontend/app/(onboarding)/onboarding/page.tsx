@@ -8,8 +8,8 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import {
     ArrowLeft, ArrowRight, Upload, Mail, Briefcase, CheckCircle2, Loader2,
-    Link2, GitBranchPlus, Globe, Shield, Sparkles, Code2, BarChart3,
-    Headphones, Megaphone, Palette, Database, Lock, ExternalLink, FileText,
+    Link2, GitBranchPlus, Globe, Shield, Sparkles, Code2,
+    Megaphone, Palette, Lock, ExternalLink, FileText,
     Zap, Send, Target, TrendingUp, Rocket, PartyPopper
 } from "lucide-react";
 import { uploadResume, startJobScrape, verifySmtp, saveUserLinks } from "@/lib/api";
@@ -27,11 +27,8 @@ const steps = [
 const jobCategories = [
     { value: "Software Developer", label: "Software Developer", icon: Code2, description: "Frontend, Backend, Full Stack", color: "from-violet-500 to-purple-600", jobs: "2,400+" },
     { value: "AI/ML Engineer", label: "AI / ML Engineer", icon: Sparkles, description: "Machine Learning, Data Science, AI", color: "from-cyan-500 to-blue-600", jobs: "1,800+" },
-    { value: "Marketing", label: "Marketing", icon: Megaphone, description: "Digital, Growth, Content", color: "from-orange-500 to-amber-600", jobs: "1,200+" },
-    { value: "Customer Support", label: "Customer Support", icon: Headphones, description: "Support, Success, Ops", color: "from-emerald-500 to-teal-600", jobs: "900+" },
-    { value: "Sales", label: "Sales", icon: BarChart3, description: "BDR, Account Exec, SDR", color: "from-pink-500 to-rose-600", jobs: "1,100+" },
+    { value: "Marketing/Sales", label: "Marketing / Sales", icon: Megaphone, description: "Digital Marketing, Growth, BDR, Sales", color: "from-orange-500 to-amber-600", jobs: "2,200+" },
     { value: "Design", label: "UI/UX Designer", icon: Palette, description: "Product Design, Visual, UX", color: "from-indigo-500 to-violet-600", jobs: "800+" },
-    { value: "Data Analyst", label: "Data Analyst", icon: Database, description: "Analytics, BI, Reporting", color: "from-yellow-500 to-orange-600", jobs: "950+" },
 ];
 
 // Engagement messages shown after completing steps
@@ -321,7 +318,7 @@ export default function OnboardingPage() {
                             {/* ═══ Step 1: Job Categories ═══ */}
                             {currentStep === 1 && (
                                 <div>
-                                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
+                                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-5">
                                         {jobCategories.map((cat, i) => (
                                             <motion.button
                                                 key={cat.value}

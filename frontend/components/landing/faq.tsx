@@ -7,7 +7,7 @@ import { Plus, Minus } from "lucide-react";
 const faqs = [
     {
         q: "How does JobAgent.ai find jobs?",
-        a: "We scan thousands of LinkedIn posts every day using AI to identify hiring posts with direct recruiter email addresses. Each job is classified into categories (Software Developer, AI/ML, Marketing, etc.) and matched to your profile automatically.",
+        a: "We scan thousands of LinkedIn posts every day using AI to identify hiring posts with direct recruiter email addresses. Each job is classified into categories (Software Developer, AI/ML Engineer, Marketing/Sales, Design) and matched to your profile automatically.",
     },
     {
         q: "Will recruiters know I used an AI tool?",
@@ -23,7 +23,7 @@ const faqs = [
     },
     {
         q: "Can I choose what kind of jobs to apply to?",
-        a: "Absolutely. During onboarding you pick your target category — Software Developer, AI/ML Engineer, Marketing, and more. Our AI only sends your profile to jobs that match your selected category.",
+        a: "Absolutely. During onboarding you pick your target category — Software Developer, AI/ML Engineer, Marketing/Sales, or Design. Our AI only sends your profile to jobs that match your selected category.",
     },
     {
         q: "What if I want to stop applications?",

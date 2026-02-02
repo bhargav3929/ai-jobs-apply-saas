@@ -25,7 +25,7 @@ const testimonials = [
     },
     {
         name: "Ananya Reddy",
-        role: "Data Analyst",
+        role: "AI/ML Engineer",
         company: "Now at Flipkart",
         content: "I went from mass-applying on job boards with 0 replies to 12 interview invites in one month. The AI personalizes every single email — it's not even close to a template.",
         avatar: "AR",

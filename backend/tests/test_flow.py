@@ -101,7 +101,7 @@ async def test_end_to_end_flow():
     # Mock Users
     users = [
         {"uid": "user_1", "jobCategory": category, "isActive": True, "email": "dev@example.com"},
-        {"uid": "user_2", "jobCategory": "Marketing", "isActive": True} # Wrong category
+        {"uid": "user_2", "jobCategory": "Marketing/Sales", "isActive": True} # Wrong category
     ]
     
     # Mock Database Jobs (We return the one we just made)

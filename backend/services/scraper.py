@@ -12,11 +12,15 @@ CATEGORY_KEYWORDS_MAP = {
         "hiring software engineer",
         "hiring web developer",
     ],
-    "AI/ML Engineer": ["hiring ai developer", "hiring ai engineer"],
-    "Marketing": ["hiring digital marketer", "hiring sales representative"],
-    "Customer Support": ["hiring customer support"],
+    "AI/ML Engineer": ["hiring ai developer", "hiring ai engineer", "hiring data analyst"],
+    "Marketing/Sales": [
+        "hiring digital marketer",
+        "hiring sales representative",
+        "hiring customer support",
+        "hiring business development",
+        "hiring marketing manager",
+    ],
     "Design": ["hiring ui ux designer"],
-    "Data Analyst": ["hiring data analyst"],
 }
 
 class LinkedInScraper:

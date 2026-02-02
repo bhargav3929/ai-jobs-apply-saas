@@ -4,6 +4,9 @@ Each category has:
   - strong_keywords: High-confidence matches (if found, almost certainly this category)
   - weak_keywords: Supportive signals (need multiple or combined with context)
   - negative_keywords: If these appear alongside, it's likely NOT this category
+
+Categories: Software Developer, AI/ML Engineer, Marketing/Sales, Design
+Data Analyst is handled by redistribution in job_classifier.py (60% AI/ML, 40% SW Dev).
 """
 
 CATEGORY_KEYWORDS = {
@@ -66,6 +69,10 @@ CATEGORY_KEYWORDS = {
             "prompt engineer", "llm engineer",
             "generative ai", "gen ai",
             "ai automation", "ai architect",
+            "data analyst", "data analytics",
+            "business analyst", "business intelligence analyst",
+            "bi analyst", "bi developer",
+            "analytics engineer", "analytics manager",
         ],
         "weak_keywords": [
             "machine learning", "deep learning", "neural network",
@@ -79,11 +86,16 @@ CATEGORY_KEYWORDS = {
             "rag", "retrieval augmented", "vector database",
             "embeddings", "semantic search",
             "artificial intelligence", "ai",
+            "sql", "tableau", "power bi", "looker",
+            "data visualization", "dashboard",
+            "reporting", "etl", "data warehouse",
+            "bigquery", "redshift", "snowflake",
         ],
         "negative_keywords": [],
     },
-    "Marketing": {
+    "Marketing/Sales": {
         "strong_keywords": [
+            # Marketing
             "digital marketer", "digital marketing manager",
             "marketing manager", "marketing specialist",
             "performance marketer", "performance marketing",
@@ -98,23 +110,16 @@ CATEGORY_KEYWORDS = {
             "brand manager", "brand strategist",
             "marketing executive", "marketing analyst",
             "digital marketing executive",
-        ],
-        "weak_keywords": [
-            "marketing", "seo", "sem", "ppc",
-            "google ads", "meta ads", "facebook ads",
-            "content marketing", "inbound marketing",
-            "social media", "instagram", "linkedin marketing",
-            "hubspot", "mailchimp", "hootsuite",
-            "analytics", "google analytics",
-            "campaign", "lead generation",
-            "copywriting", "blog", "content creation",
-        ],
-        "negative_keywords": [
-            "developer", "engineer", "coding", "programming",
-        ],
-    },
-    "Customer Support": {
-        "strong_keywords": [
+            # Sales
+            "sales executive", "sales manager", "sales representative",
+            "business development executive", "business development manager",
+            "bde", "bdm", "bdr", "sdr",
+            "account executive", "account manager",
+            "inside sales", "outside sales",
+            "sales associate", "sales officer",
+            "sales development representative",
+            "revenue manager", "revenue officer",
+            # Customer Support
             "customer support", "customer support executive",
             "customer service", "customer service representative",
             "customer success", "customer success manager",
@@ -125,34 +130,25 @@ CATEGORY_KEYWORDS = {
             "customer experience", "cx manager",
         ],
         "weak_keywords": [
+            "marketing", "seo", "sem", "ppc",
+            "google ads", "meta ads", "facebook ads",
+            "content marketing", "inbound marketing",
+            "social media", "instagram", "linkedin marketing",
+            "hubspot", "mailchimp", "hootsuite",
+            "analytics", "google analytics",
+            "campaign", "lead generation",
+            "copywriting", "blog", "content creation",
+            "sales", "business development", "revenue",
+            "quota", "pipeline", "crm", "salesforce",
+            "cold calling", "prospecting",
+            "b2b sales", "b2c sales", "enterprise sales",
+            "closing deals",
             "support", "helpdesk", "ticketing",
             "zendesk", "freshdesk", "intercom",
             "customer", "client relations",
         ],
         "negative_keywords": [
-            "developer", "engineer", "marketing", "sales",
-        ],
-    },
-    "Sales": {
-        "strong_keywords": [
-            "sales executive", "sales manager", "sales representative",
-            "business development executive", "business development manager",
-            "bde", "bdm", "bdr", "sdr",
-            "account executive", "account manager",
-            "inside sales", "outside sales",
-            "sales associate", "sales officer",
-            "sales development representative",
-            "revenue manager", "revenue officer",
-        ],
-        "weak_keywords": [
-            "sales", "business development", "revenue",
-            "quota", "pipeline", "crm", "salesforce",
-            "cold calling", "lead generation", "prospecting",
-            "b2b sales", "b2c sales", "enterprise sales",
-            "closing deals",
-        ],
-        "negative_keywords": [
-            "developer", "engineer", "marketing",
+            "developer", "engineer", "coding", "programming",
         ],
     },
     "Design": {
@@ -173,25 +169,6 @@ CATEGORY_KEYWORDS = {
         ],
         "negative_keywords": [
             "developer", "engineer", "marketing",
-        ],
-    },
-    "Data Analyst": {
-        "strong_keywords": [
-            "data analyst", "data analytics",
-            "business analyst", "business intelligence analyst",
-            "bi analyst", "bi developer",
-            "sql analyst", "reporting analyst",
-            "analytics engineer", "analytics manager",
-        ],
-        "weak_keywords": [
-            "sql", "tableau", "power bi", "looker",
-            "excel", "data visualization", "dashboard",
-            "reporting", "etl", "data warehouse",
-            "bigquery", "redshift", "snowflake",
-        ],
-        "negative_keywords": [
-            "data scientist", "machine learning", "deep learning",
-            "developer", "software engineer",
         ],
     },
 }

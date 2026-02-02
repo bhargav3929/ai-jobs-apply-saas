@@ -44,15 +44,26 @@ def main():
 
     users_by_category = {}
     total_users = 0
+    skipped_disabled = 0
     for user in users:
         user_data = user.to_dict()
         user_data["uid"] = user.id
+
+        # Skip users disabled by admin
+        if user_data.get("disabledByAdmin", False):
+            skipped_disabled += 1
+            logger.info(f"  SKIPPED (disabledByAdmin): uid={user.id}, name={user_data.get('name')}")
+            continue
+
         category = user_data.get("jobCategory", "Other")
         if category not in users_by_category:
             users_by_category[category] = []
         users_by_category[category].append(user_data)
         total_users += 1
         logger.info(f"  User: uid={user.id}, name={user_data.get('name')}, category={category}, smtpEmail={user_data.get('smtpEmail')}, hasSmtpPassword={'smtpPassword' in user_data}")
+
+    if skipped_disabled:
+        logger.info(f"Skipped {skipped_disabled} admin-disabled users")
 
     logger.info(f"Found {total_users} active users across {len(users_by_category)} categories: {list(users_by_category.keys())}")
 
@@ -114,9 +125,12 @@ def main():
         for user_id, assigned_jobs in assignments.items():
             logger.info(f"  User {user_id}: assigned {len(assigned_jobs)} jobs")
 
+            # Per-user random offset so users don't all start simultaneously (0-10 min)
+            user_offset = random.randint(0, 600)
+
             for i, job in enumerate(assigned_jobs):
-                # Production: 1-3 minutes between each email per user
-                base_delay = random.randint(60, 180) * (i + 1)
+                # Production: 2-5 minutes between each email per user
+                base_delay = random.randint(120, 300) * (i + 1)
 
                 # Stagger for shared jobs
                 share_position = job.get("_share_position", 0)
@@ -124,7 +138,7 @@ def main():
                 low, high = STAGGER_RANGES[stagger_idx]
                 stagger = random.randint(low, high) if high > 0 else 0
 
-                delay_seconds = base_delay + stagger
+                delay_seconds = user_offset + base_delay + stagger
                 delay_minutes = delay_seconds / 60
 
                 job_id = job.get("jobId", "unknown")
