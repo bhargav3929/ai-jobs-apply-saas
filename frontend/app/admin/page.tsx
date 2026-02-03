@@ -361,6 +361,24 @@ export default function AdminPage() {
                             </button>
                             <button
                                 onClick={async () => {
+                                    if (!confirm("This will STOP all queued emails immediately. Are you sure?")) return;
+                                    try {
+                                        const res = await fetch(`${API_URL}/admin/emergency-stop`, {
+                                            method: "POST",
+                                            headers: { Authorization: authHeader },
+                                        });
+                                        const data = await res.json();
+                                        setActionMessage(`Stopped: ${data.purged} pending + ${data.revoked} active tasks killed`);
+                                    } catch (e: unknown) {
+                                        setActionMessage(`Error: ${e instanceof Error ? e.message : String(e)}`);
+                                    }
+                                }}
+                                className="bg-red-700 hover:bg-red-800 text-white px-4 py-2 rounded-lg text-sm font-medium transition border-2 border-red-500"
+                            >
+                                Emergency Stop
+                            </button>
+                            <button
+                                onClick={async () => {
                                     if (!confirm("Are you sure? This will delete ALL scraped jobs from the database.")) return;
                                     try {
                                         const res = await fetch(`${API_URL}/admin/erase-jobs`, {

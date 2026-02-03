@@ -315,3 +315,32 @@ async def erase_jobs_database(authorization: str = Header(None)):
         "timestamp": datetime.now().isoformat(),
     })
     return {"success": True, "message": f"Deleted {deleted} jobs from database."}
+
+
+@router.post("/emergency-stop")
+async def emergency_stop(authorization: str = Header(None)):
+    verify_admin_basic(authorization)
+    from tasks.celery_app import celery_app
+
+    purged = celery_app.control.purge()
+
+    revoked = 0
+    inspect = celery_app.control.inspect()
+    for method in [inspect.active, inspect.reserved, inspect.scheduled]:
+        try:
+            result = method() or {}
+            for tasks in result.values():
+                for task in tasks:
+                    task_id = task.get("id") or task.get("request", {}).get("id")
+                    if task_id:
+                        celery_app.control.revoke(task_id, terminate=True)
+                        revoked += 1
+        except Exception:
+            pass
+
+    db.collection("system_logs").add({
+        "type": "warning", "level": "warning",
+        "message": f"EMERGENCY STOP: purged {purged} pending, revoked {revoked} active/reserved tasks",
+        "timestamp": datetime.now().isoformat(),
+    })
+    return {"success": True, "purged": purged, "revoked": revoked}
