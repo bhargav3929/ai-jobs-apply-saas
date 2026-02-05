@@ -23,6 +23,7 @@ celery_app.conf.update(
     timezone='UTC',
     enable_utc=True,
     worker_pool=worker_pool,
+    worker_prefetch_multiplier=1,
 )
 
 @worker_ready.connect

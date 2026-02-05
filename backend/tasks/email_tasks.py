@@ -4,15 +4,19 @@ from celery.exceptions import MaxRetriesExceededError
 import smtplib
 from datetime import datetime
 import uuid
+import redis
 from firebase_admin import firestore
 from google.cloud.firestore_v1.base_query import FieldFilter
 
 from .celery_app import celery_app
 from core.firebase import db
+from core.settings import REDIS_URL
 from services.email_generator import generate_email_with_ai
 from services.smtp_sender import send_via_smtp
 from utils.encryption import encryptor
 from utils.error_handler import log_error_to_db, ErrorType
+
+redis_client = redis.from_url(REDIS_URL)
 
 logger = logging.getLogger("email_tasks")
 
@@ -29,6 +33,13 @@ def send_application_email(self, user_id: str, job_id: str):
         if not db:
             logger.error(f"[{task_id}] Firestore not initialized!")
             raise Exception("Firestore not initialized")
+
+        # Acquire Redis lock to prevent duplicate execution by multiple workers
+        lock_key = f"email_lock:{user_id}:{job_id}"
+        if not redis_client.set(lock_key, task_id, nx=True, ex=600):
+            logger.info(f"[{task_id}] SKIPPED (duplicate) — another worker already processing user={user_id} job={job_id}")
+            return {"status": "skipped", "reason": "duplicate_lock"}
+        logger.info(f"[{task_id}] Lock acquired: {lock_key}")
 
         # Fetch user
         logger.info(f"[{task_id}] Fetching user document: {user_id}")

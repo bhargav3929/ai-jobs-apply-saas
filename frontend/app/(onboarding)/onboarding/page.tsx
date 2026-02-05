@@ -51,6 +51,9 @@ export default function OnboardingPage() {
     const [uploading, setUploading] = useState(false);
     const [smtpEmail, setSmtpEmail] = useState("");
     const [smtpPassword, setSmtpPassword] = useState("");
+    const [smtpVerified, setSmtpVerified] = useState(false);
+    const [smtpVerifying, setSmtpVerifying] = useState(false);
+    const [smtpError, setSmtpError] = useState("");
     const { user, refreshUserProfile } = useAuth();
 
     const [extractedLinks, setExtractedLinks] = useState<{ github?: string; portfolio?: string }>({});
@@ -92,21 +95,25 @@ export default function OnboardingPage() {
         if (currentStep > 1) setCurrentStep((prev) => prev - 1);
     };
 
+    const handleSmtpVerify = async () => {
+        setSmtpVerifying(true);
+        setSmtpError("");
+        try {
+            await verifySmtp(smtpEmail, smtpPassword);
+            setSmtpVerified(true);
+        } catch (error: any) {
+            setSmtpError(error.message || "SMTP verification failed. Check your email and app password.");
+            setSmtpVerified(false);
+        } finally {
+            setSmtpVerifying(false);
+        }
+    };
+
     const handleComplete = async () => {
         setLoading(true);
         try {
             if (!user) throw new Error("No user found");
             if (!db) throw new Error("Firestore not initialized");
-
-            if (smtpEmail && smtpPassword) {
-                try {
-                    await verifySmtp(smtpEmail, smtpPassword);
-                } catch (error: any) {
-                    alert(`SMTP Connection Failed: ${error.message}\nPlease check your email and app password.`);
-                    setLoading(false);
-                    return;
-                }
-            }
 
             try {
                 const timeoutPromise = new Promise((_, reject) => { setTimeout(() => reject(new Error("Timeout")), 5000); });
@@ -155,7 +162,7 @@ export default function OnboardingPage() {
             case 1: return !!jobCategory;
             case 2: return !!resumeFile;
             case 3: return true;
-            case 4: return !!smtpEmail && !!smtpPassword;
+            case 4: return !!smtpEmail && !!smtpPassword && smtpVerified;
             default: return false;
         }
     };
@@ -609,7 +616,7 @@ export default function OnboardingPage() {
                                             <Label className="text-sm font-medium text-[var(--color-text-primary)]">Gmail Address</Label>
                                             <div className="relative">
                                                 <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--color-text-tertiary)]" />
-                                                <Input placeholder="you@gmail.com" value={smtpEmail} onChange={(e) => setSmtpEmail(e.target.value)}
+                                                <Input placeholder="you@gmail.com" value={smtpEmail} onChange={(e) => { setSmtpEmail(e.target.value); setSmtpVerified(false); setSmtpError(""); }}
                                                     className="pl-10 h-12 rounded-xl border-[var(--color-border-subtle)] focus:border-[var(--color-brand-primary)] focus:ring-[var(--color-brand-primary)]/20 bg-[var(--color-surface)]" />
                                             </div>
                                         </div>
@@ -617,7 +624,7 @@ export default function OnboardingPage() {
                                             <Label className="text-sm font-medium text-[var(--color-text-primary)]">App Password</Label>
                                             <div className="relative">
                                                 <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--color-text-tertiary)]" />
-                                                <Input type="password" placeholder="xxxx xxxx xxxx xxxx" value={smtpPassword} onChange={(e) => setSmtpPassword(e.target.value)}
+                                                <Input type="password" placeholder="xxxx xxxx xxxx xxxx" value={smtpPassword} onChange={(e) => { setSmtpPassword(e.target.value); setSmtpVerified(false); setSmtpError(""); }}
                                                     className="pl-10 h-12 rounded-xl border-[var(--color-border-subtle)] focus:border-[var(--color-brand-primary)] focus:ring-[var(--color-brand-primary)]/20 bg-[var(--color-surface)]" />
                                             </div>
                                             <p className="text-[11px] text-[var(--color-text-tertiary)] flex items-center gap-1.5">
@@ -625,6 +632,39 @@ export default function OnboardingPage() {
                                             </p>
                                         </div>
                                     </div>
+
+                                    {/* Verify Connection Button */}
+                                    <Button
+                                        onClick={handleSmtpVerify}
+                                        disabled={!smtpEmail || !smtpPassword || smtpVerifying || smtpVerified}
+                                        className={`w-full h-11 rounded-xl text-sm font-semibold transition-all ${
+                                            smtpVerified
+                                                ? "bg-[var(--color-success)] text-white cursor-default"
+                                                : "bg-[var(--color-surface)] border border-[var(--color-border-subtle)] text-[var(--color-text-primary)] hover:border-[var(--color-brand-primary)] hover:bg-[var(--color-brand-primary)]/5"
+                                        }`}
+                                    >
+                                        {smtpVerifying ? (
+                                            <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Verifying connection...</>
+                                        ) : smtpVerified ? (
+                                            <><CheckCircle2 className="w-4 h-4 mr-2" /> Connection verified</>
+                                        ) : (
+                                            <><Zap className="w-4 h-4 mr-2" /> Verify Connection</>
+                                        )}
+                                    </Button>
+
+                                    {/* Error message */}
+                                    {smtpError && (
+                                        <motion.div initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }}
+                                            className="flex items-start gap-3 p-4 rounded-xl bg-red-50 border border-red-200">
+                                            <div className="w-5 h-5 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0 mt-0.5">
+                                                <span className="text-red-600 text-xs font-bold">!</span>
+                                            </div>
+                                            <div>
+                                                <p className="text-sm font-medium text-red-800">Connection failed</p>
+                                                <p className="text-xs text-red-600 mt-0.5">{smtpError}</p>
+                                            </div>
+                                        </motion.div>
+                                    )}
 
                                     {/* What happens next */}
                                     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}

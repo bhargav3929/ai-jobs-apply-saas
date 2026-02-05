@@ -22,6 +22,7 @@ COPY utils/ ./utils/
 COPY data/ ./data/
 COPY scripts/ ./scripts/
 COPY middleware/ ./middleware/
+COPY start.sh .
 
 # Expose port
 EXPOSE 8000
