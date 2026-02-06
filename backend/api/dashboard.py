@@ -1,9 +1,11 @@
+from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, HTTPException, Header
 from core.firebase import db
 from google.cloud.firestore_v1.base_query import FieldFilter
 import firebase_admin.auth as auth
-from services.cache import CacheManager
-from services.optimized_queries import OptimizedQueries
+
+# Indian Standard Time (UTC+5:30)
+IST = timezone(timedelta(hours=5, minutes=30))
 
 router = APIRouter(prefix="/api/dashboard", tags=["dashboard"])
 
@@ -21,7 +23,7 @@ async def verify_token(authorization: str = Header(None)):
 async def get_dashboard_stats(authorization: str = Header(None)):
     user_token = await verify_token(authorization)
     user_id = user_token["uid"]
-    
+
     if not db:
         raise HTTPException(status_code=503, detail="Database unavailable")
 
@@ -30,29 +32,70 @@ async def get_dashboard_stats(authorization: str = Header(None)):
     if not user_doc.exists:
         raise HTTPException(status_code=404, detail="User not found")
     user_data = user_doc.to_dict()
-    
-    # 2. Get recent applications (limit 5)
-    recent_apps_query = db.collection("applications") \
-        .where(filter=FieldFilter("userId", "==", user_id)) \
-        .order_by("sentAt", direction="DESCENDING") \
-        .limit(5) \
-        .stream()
-    
-    recent_applications = [app.to_dict() for app in recent_apps_query]
-    
-    # 3. Calculate next batch time (Mock logic or read from cron schedule/redis)
-    # Simple logic: next hour?
-    import datetime
-    next_batch = (datetime.datetime.now() + datetime.timedelta(hours=1)).replace(minute=0, second=0, microsecond=0)
-    
+
+    # 2. Compute all metrics dynamically from the applications collection (IST)
+    now = datetime.now(IST)
+    today_midnight = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    today_start = today_midnight.strftime("%Y-%m-%dT%H:%M:%S")
+    yesterday_start = (today_midnight - timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%S")
+    week_start = (now - timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:%S")
+    month_start = (now - timedelta(days=30)).strftime("%Y-%m-%dT%H:%M:%S")
+
+    apps_today = 0
+    apps_yesterday = 0
+    apps_this_week = 0
+    apps_this_month = 0
+    apps_total = 0
+    recent_applications = []
+
+    for app_doc in db.collection("applications") \
+            .where(filter=FieldFilter("userId", "==", user_id)) \
+            .order_by("sentAt", direction="DESCENDING") \
+            .stream():
+        data = app_doc.to_dict()
+        sent_at = data.get("sentAt", "")
+        apps_total += 1
+
+        if sent_at >= today_start:
+            apps_today += 1
+        elif sent_at >= yesterday_start:
+            apps_yesterday += 1
+        if sent_at >= week_start:
+            apps_this_week += 1
+        if sent_at >= month_start:
+            apps_this_month += 1
+
+        if len(recent_applications) < 5:
+            recent_applications.append(data)
+
+    # Calculate average daily sends from account age
+    created_at = user_data.get("createdAt")
+    if created_at and apps_total > 0:
+        try:
+            created_dt = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+            # Convert to IST for consistent comparison
+            created_dt_ist = created_dt.astimezone(IST)
+            account_age_days = max((now - created_dt_ist).days, 1)
+            average_daily = round(apps_total / account_age_days, 1)
+        except (ValueError, TypeError):
+            average_daily = 0
+    else:
+        average_daily = 0
+
+    # 3. Next batch time (distribution runs at 9 AM IST daily)
+    next_batch = now.replace(hour=9, minute=0, second=0, microsecond=0)
+    if now >= next_batch:
+        next_batch = next_batch + timedelta(days=1)
+
     return {
         "userName": user_data.get("name"),
-        "applicationsToday": user_data.get("applicationsToday", 0),
-        "applicationsThisWeek": user_data.get("applicationsThisWeek", 0),
-        "applicationsThisMonth": user_data.get("applicationsThisMonth", 0),
-        "applicationsTotal": user_data.get("applicationsTotal", 0),
+        "applicationsToday": apps_today,
+        "applicationsYesterday": apps_yesterday,
+        "applicationsThisWeek": apps_this_week,
+        "applicationsThisMonth": apps_this_month,
+        "applicationsTotal": apps_total,
         "isActive": user_data.get("isActive", False),
-        "averageDaily": user_data.get("averageDaily", 20),
+        "averageDaily": average_daily,
         "nextBatchTime": next_batch.isoformat(),
         "recentApplications": recent_applications
     }

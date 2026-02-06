@@ -2,7 +2,7 @@
 
 import { useAuth } from "@/contexts";
 import { Button } from "@/components/ui/button";
-import { Bell, Search, User, Settings, CreditCard, LogOut, Zap } from "lucide-react";
+import { Bell, Search, User, Settings, CreditCard, LogOut } from "lucide-react";
 import Link from "next/link";
 import {
     DropdownMenu,
@@ -17,18 +17,17 @@ export function Header() {
     const { user, userProfile, signOut } = useAuth();
 
     return (
-        <header className="sticky top-0 z-40 px-5 md:px-6 py-3 flex items-center justify-between">
-            {/* Left — Brand pill */}
-            <div className="flex items-center gap-2 bg-white rounded-xl border border-[var(--color-border-subtle)] shadow-[0_1px_4px_rgba(0,0,0,0.04)] px-2.5 py-1.5">
-                <div className="w-6 h-6 rounded-md bg-[var(--color-brand-primary)] flex items-center justify-center shadow-[0_1px_4px_rgba(99,102,241,0.3)]">
-                    <Zap className="w-3 h-3 text-white" />
-                </div>
-                <span className="text-[13px] font-bold text-[var(--color-brand-dark)] tracking-tight">
-                    JobAgent<span className="text-[var(--color-brand-primary)]">.ai</span>
-                </span>
+        <header className="sticky top-0 z-40 px-5 md:px-6 py-3 flex items-center justify-between md:justify-end">
+            {/* Left — Brand (mobile only, desktop logo is fixed in layout) */}
+            <div className="flex items-center md:hidden">
+                <Link href="/dashboard" className="flex items-center gap-1.5">
+                    <span className="text-[14px] font-bold text-[var(--color-brand-dark)] tracking-tight">
+                        JobAgent<span className="text-[var(--color-brand-primary)]">.ai</span>
+                    </span>
+                </Link>
             </div>
 
-            {/* Right — Actions pill */}
+            {/* Right — Actions */}
             <div className="flex items-center gap-1 bg-white rounded-xl border border-[var(--color-border-subtle)] shadow-[0_1px_4px_rgba(0,0,0,0.04)] px-1.5 py-1">
                 {/* Search */}
                 <Button
