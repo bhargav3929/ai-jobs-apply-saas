@@ -160,10 +160,19 @@ async def upload_resume(resume: UploadFile = File(...), authorization: str = Hea
         except Exception as fb_err:
             print(f"Firestore fallback also failed: {fb_err}")
 
-    # 3. Save resumeUrl + extracted links to user document
-    user_update = {"resumeUrl": resume_url} if resume_url else {}
+    # 3. Save resumeUrl + extracted links + metadata to user document
+    user_update = {
+        "resumeUrl": resume_url,
+        "resumeMetadata": {
+            "filename": resume.filename,
+            "size": len(content),
+            "uploadedAt": datetime.now().isoformat()
+        }
+    } if resume_url else {}
+    
     if extracted_links:
         user_update["extractedLinks"] = extracted_links
+        
     if user_update and db:
         try:
             db.collection("users").document(user['uid']).set(user_update, merge=True)
@@ -174,8 +183,47 @@ async def upload_resume(resume: UploadFile = File(...), authorization: str = Hea
         "success": True,
         "resumeUrl": resume_url,
         "extracted_skills": found_skills or ["general"],
-        "extracted_links": extracted_links
+        "extracted_links": extracted_links,
+        "metadata": user_update.get("resumeMetadata")
     }
+
+
+@router.post("/delete-resume")
+async def delete_resume(authorization: str = Header(None)):
+    user = await verify_token(authorization)
+    user_id = user["uid"]
+    
+    from firebase_admin import storage
+    
+    # 1. Try to delete from Storage
+    try:
+        bucket = storage.bucket()
+        blob_path = f"resumes/{user_id}/resume.pdf"
+        blob = bucket.blob(blob_path)
+        if blob.exists():
+            blob.delete()
+            print(f"Deleted resume blob: {blob_path}")
+    except Exception as e:
+        print(f"Error deleting from storage (could be ignored if file missing): {e}")
+
+    # 2. Clear fields in Firestore
+    if db:
+        try:
+            # We use FieldValue.delete() to remove specific fields
+            # But firebase-admin-python uses update({field: firestore.DELETE_FIELD})
+            from google.cloud import firestore
+            
+            ref = db.collection("users").document(user_id)
+            ref.update({
+                "resumeUrl": firestore.DELETE_FIELD,
+                "resumeMetadata": firestore.DELETE_FIELD
+                # We KEEP extractedLinks and extractedSkills as the user might want to keep the profile data
+            })
+        except Exception as e:
+            print(f"Error updating firestore on delete: {e}")
+            raise HTTPException(status_code=500, detail="Failed to update database")
+            
+    return {"success": True}
 
 
 def _extract_links_from_resume(text: str) -> dict:

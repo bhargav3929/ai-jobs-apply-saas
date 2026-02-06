@@ -2,22 +2,28 @@
 
 import React, { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Mail, User, Shield, Key, Lock, Loader2, CheckCircle2, AlertCircle, Pencil } from "lucide-react";
+import { Mail, User, Shield, Key, Lock, Loader2, CheckCircle2, AlertCircle, Pencil, FileText, Trash2, UploadCloud } from "lucide-react";
 import { useAuth } from "@/contexts";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { verifySmtp } from "@/lib/api";
+import { verifySmtp, uploadResume, deleteResume } from "@/lib/api";
 
 export default function SettingsPage() {
     const { userProfile, refreshUserProfile } = useAuth();
 
+    // SMTP State
     const [editingSmtp, setEditingSmtp] = useState(false);
     const [smtpEmail, setSmtpEmail] = useState("");
     const [smtpPassword, setSmtpPassword] = useState("");
     const [smtpLoading, setSmtpLoading] = useState(false);
     const [smtpError, setSmtpError] = useState("");
     const [smtpSuccess, setSmtpSuccess] = useState(false);
+
+    // Resume State
+    const [resumeLoading, setResumeLoading] = useState(false);
+    const [resumeError, setResumeError] = useState("");
+    const [resumeSuccess, setResumeSuccess] = useState("");
 
     const handleSmtpEdit = () => {
         setSmtpEmail(userProfile?.smtpEmail || "");
@@ -55,6 +61,56 @@ export default function SettingsPage() {
             setSmtpError(err.message || "SMTP verification failed. Check your credentials.");
         } finally {
             setSmtpLoading(false);
+        }
+    };
+
+    const handleResumeUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        if (file.type !== "application/pdf") {
+            setResumeError("Only PDF files are allowed.");
+            return;
+        }
+
+        if (file.size > 5 * 1024 * 1024) {
+            setResumeError("File size must be less than 5MB.");
+            return;
+        }
+
+        setResumeLoading(true);
+        setResumeError("");
+        setResumeSuccess("");
+
+        try {
+            await uploadResume(file);
+            await refreshUserProfile();
+            setResumeSuccess("Resume uploaded successfully!");
+            setTimeout(() => setResumeSuccess(""), 3000);
+        } catch (err: any) {
+            setResumeError(err.message || "Failed to upload resume.");
+        } finally {
+            setResumeLoading(false);
+            // Reset input value to allow re-uploading same file if needed
+            e.target.value = "";
+        }
+    };
+
+    const handleResumeDelete = async () => {
+        if (!confirm("Are you sure you want to delete your resume? This action cannot be undone.")) return;
+
+        setResumeLoading(true);
+        setResumeError("");
+
+        try {
+            await deleteResume();
+            await refreshUserProfile();
+            setResumeSuccess("Resume deleted.");
+            setTimeout(() => setResumeSuccess(""), 3000);
+        } catch (err: any) {
+            setResumeError(err.message || "Failed to delete resume.");
+        } finally {
+            setResumeLoading(false);
         }
     };
 
@@ -123,11 +179,126 @@ export default function SettingsPage() {
                     </motion.div>
                 ))}
 
-                {/* SMTP Configuration with Edit */}
+                {/* Resume Management Section */}
                 <motion.div
                     initial={{ opacity: 0, y: 16 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: 0.05 + sections.length * 0.08, duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+                    className="bg-white rounded-2xl border border-[var(--color-border-subtle)] overflow-hidden"
+                >
+                    <div className="flex items-center gap-3 px-6 py-4 border-b border-[var(--color-border-subtle)]">
+                        <div className="w-8 h-8 rounded-lg bg-[var(--color-brand-primary)]/[0.06] flex items-center justify-center">
+                            <FileText className="w-4 h-4 text-[var(--color-brand-primary)]" />
+                        </div>
+                        <div>
+                            <h3 className="text-[14px] font-semibold text-[var(--color-brand-dark)]">Resume Management</h3>
+                            <p className="text-[11px] text-[var(--color-text-tertiary)]">Upload to auto-fill applications</p>
+                        </div>
+                    </div>
+
+                    <div className="p-6">
+                        {userProfile?.resumeUrl ? (
+                            <div className="flex items-center justify-between bg-[var(--color-surface)] border border-[var(--color-border-subtle)] rounded-xl p-4">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-lg bg-white border border-[var(--color-border-subtle)] flex items-center justify-center flex-shrink-0">
+                                        <FileText className="w-5 h-5 text-[var(--color-brand-primary)]" />
+                                    </div>
+                                    <div>
+                                        <p className="text-[13px] font-medium text-[var(--color-brand-dark)] truncate max-w-[200px] md:max-w-[300px]">
+                                            {userProfile.resumeMetadata?.filename || "Resume.pdf"}
+                                        </p>
+                                        <p className="text-[11px] text-[var(--color-text-tertiary)]">
+                                            Uploaded {userProfile.resumeMetadata?.uploadedAt ? new Date(userProfile.resumeMetadata.uploadedAt).toLocaleDateString() : "Recently"} • {(userProfile.resumeMetadata?.size ? (userProfile.resumeMetadata.size / 1024 / 1024).toFixed(2) : "0")} MB
+                                        </p>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        className="h-9 relative overflow-hidden"
+                                        disabled={resumeLoading}
+                                    >
+                                        <input
+                                            type="file"
+                                            accept="application/pdf"
+                                            className="absolute inset-0 opacity-0 cursor-pointer"
+                                            onChange={handleResumeUpload}
+                                            disabled={resumeLoading}
+                                        />
+                                        Replace
+                                    </Button>
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={handleResumeDelete}
+                                        disabled={resumeLoading}
+                                        className="h-9 w-9 p-0 text-[var(--color-error)] hover:bg-[var(--color-error)]/10 hover:text-[var(--color-error)]"
+                                    >
+                                        {resumeLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                                    </Button>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="border-2 border-dashed border-[var(--color-border-subtle)] rounded-xl p-8 flex flex-col items-center justify-center text-center hover:bg-[var(--color-surface)] transition-colors group relative cursor-pointer">
+                                <input
+                                    type="file"
+                                    accept="application/pdf"
+                                    className="absolute inset-0 opacity-0 cursor-pointer z-10"
+                                    onChange={handleResumeUpload}
+                                    disabled={resumeLoading}
+                                />
+                                <div className="w-12 h-12 rounded-full bg-[var(--color-brand-primary)]/[0.06] flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+                                    {resumeLoading ? (
+                                        <Loader2 className="w-6 h-6 text-[var(--color-brand-primary)] animate-spin" />
+                                    ) : (
+                                        <UploadCloud className="w-6 h-6 text-[var(--color-brand-primary)]" />
+                                    )}
+                                </div>
+                                <h3 className="text-[14px] font-medium text-[var(--color-brand-dark)]">Upload Resume</h3>
+                                <p className="text-[12px] text-[var(--color-text-tertiary)] mt-1 max-w-xs">
+                                    Drag & drop or click to upload (PDF only, max 5MB)
+                                </p>
+                            </div>
+                        )}
+
+                        {/* Status Messages */}
+                        <AnimatePresence>
+                            {resumeError && (
+                                <motion.div
+                                    initial={{ opacity: 0, height: 0, marginTop: 0 }}
+                                    animate={{ opacity: 1, height: "auto", marginTop: 12 }}
+                                    exit={{ opacity: 0, height: 0, marginTop: 0 }}
+                                    className="overflow-hidden"
+                                >
+                                    <div className="flex items-center gap-2 p-3 rounded-lg bg-[var(--color-error)]/10 text-[var(--color-error)] text-[12px]">
+                                        <AlertCircle className="w-4 h-4" />
+                                        {resumeError}
+                                    </div>
+                                </motion.div>
+                            )}
+                            {resumeSuccess && (
+                                <motion.div
+                                    initial={{ opacity: 0, height: 0, marginTop: 0 }}
+                                    animate={{ opacity: 1, height: "auto", marginTop: 12 }}
+                                    exit={{ opacity: 0, height: 0, marginTop: 0 }}
+                                    className="overflow-hidden"
+                                >
+                                    <div className="flex items-center gap-2 p-3 rounded-lg bg-[var(--color-success)]/10 text-[var(--color-success)] text-[12px]">
+                                        <CheckCircle2 className="w-4 h-4" />
+                                        {resumeSuccess}
+                                    </div>
+                                </motion.div>
+                            )}
+                        </AnimatePresence>
+                    </div>
+                </motion.div>
+
+                {/* SMTP Configuration with Edit */}
+                <motion.div
+                    initial={{ opacity: 0, y: 16 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.05 + (sections.length + 1) * 0.08, duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
                     className="bg-white rounded-2xl border border-[var(--color-border-subtle)] overflow-hidden"
                 >
                     <div className="flex items-center gap-3 px-6 py-4 border-b border-[var(--color-border-subtle)]">

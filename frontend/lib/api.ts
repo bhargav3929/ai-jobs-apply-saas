@@ -1,5 +1,6 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000/api";
 import { getAuth } from "firebase/auth";
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000/api";
 
 async function getAuthToken() {
     const auth = getAuth();
@@ -21,7 +22,30 @@ export async function uploadResume(file: File) {
     });
 
     if (!response.ok) {
-        throw new Error("Failed to upload resume");
+        let errorMessage = "Failed to upload resume";
+        try {
+            const errorData = await response.json();
+            errorMessage = errorData.detail || errorData.message || errorMessage;
+        } catch (e) {
+            // response was not JSON
+        }
+        throw new Error(errorMessage);
+    }
+
+    return response.json();
+}
+
+export async function deleteResume() {
+    const token = await getAuthToken();
+    const response = await fetch(`${API_URL}/user/delete-resume`, {
+        method: "POST",
+        headers: {
+            "Authorization": `Bearer ${token}`
+        }
+    });
+
+    if (!response.ok) {
+        throw new Error("Failed to delete resume");
     }
 
     return response.json();
