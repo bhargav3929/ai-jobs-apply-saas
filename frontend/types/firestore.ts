@@ -43,6 +43,13 @@ export interface User {
     // Subscription
     subscriptionStatus: SubscriptionStatus;
     subscriptionEndsAt: string;
+
+    // Resume Metadata
+    resumeMetadata?: {
+        filename: string;
+        size: number;
+        uploadedAt: string;
+    };
 }
 
 // ============ JOB ============
