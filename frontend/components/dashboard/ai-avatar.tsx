@@ -104,6 +104,8 @@ function CompanionCharacter({
     const gaze = useRef({ x: 0, y: 0 });
     const prevSpk = useRef(false);
     const bounce = useRef({ on: false, t0: 0 });
+    // Intro spin: full 360° Y rotation on mount to grab user's attention
+    const introSpin = useRef({ active: true, startTime: -1, angle: 0 });
 
     useFrame((state, delta) => {
         const t = state.clock.elapsedTime;
@@ -185,11 +187,33 @@ function CompanionCharacter({
         const bs = e.tBobSpeed;
         g.position.y = Math.sin(t * 1.2 * bs) * 0.012 + Math.sin(t * 0.7 * bs) * 0.006 + Math.sin(t * 2.1 * bs) * 0.003;
 
-        // Head rotation (gaze + fidget)
-        g.rotation.y = THREE.MathUtils.lerp(g.rotation.y, gx * 2 + f.tx, delta * 4);
-        g.rotation.x = THREE.MathUtils.lerp(g.rotation.x, -gy * 0.5 + f.tz, delta * 4);
-        if (speaking) g.rotation.x += Math.sin(t * 3) * 0.01;
-        g.rotation.z = THREE.MathUtils.lerp(g.rotation.z, f.tz * 0.5, delta * 3);
+        // Intro spin: full 360° on mount, then settle
+        const spin = introSpin.current;
+        if (spin.active) {
+            if (spin.startTime < 0) spin.startTime = t;
+            const elapsed = t - spin.startTime;
+            const duration = 1.2; // spin duration in seconds
+            if (elapsed < duration) {
+                // Ease-out cubic for smooth deceleration
+                const progress = elapsed / duration;
+                const eased = 1 - Math.pow(1 - progress, 3);
+                spin.angle = eased * Math.PI * 2; // full 360°
+                g.rotation.y = spin.angle;
+                g.rotation.x = Math.sin(progress * Math.PI) * 0.1; // slight tilt during spin
+                g.rotation.z = 0;
+            } else {
+                spin.active = false;
+                g.rotation.y = 0;
+            }
+        }
+
+        // Normal head rotation (gaze + fidget) — only after intro spin completes
+        if (!spin.active) {
+            g.rotation.y = THREE.MathUtils.lerp(g.rotation.y, gx * 2 + f.tx, delta * 4);
+            g.rotation.x = THREE.MathUtils.lerp(g.rotation.x, -gy * 0.5 + f.tz, delta * 4);
+            if (speaking) g.rotation.x += Math.sin(t * 3) * 0.01;
+            g.rotation.z = THREE.MathUtils.lerp(g.rotation.z, f.tz * 0.5, delta * 3);
+        }
 
         // Body breathing + squash
         if (bodyRef.current) {

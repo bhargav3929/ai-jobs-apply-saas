@@ -14,6 +14,8 @@ import {
     createUserWithEmailAndPassword,
     signOut as firebaseSignOut,
     sendPasswordResetEmail,
+    verifyPasswordResetCode,
+    confirmPasswordReset,
 } from "firebase/auth";
 import { doc, getDoc, setDoc } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
@@ -27,6 +29,8 @@ interface AuthContextType {
     signUp: (email: string, password: string, name: string) => Promise<void>;
     signOut: () => Promise<void>;
     resetPassword: (email: string) => Promise<void>;
+    verifyResetCode: (code: string) => Promise<string>;
+    confirmReset: (code: string, newPassword: string) => Promise<void>;
     refreshUserProfile: () => Promise<void>;
 }
 
@@ -165,6 +169,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         await sendPasswordResetEmail(auth, email);
     };
 
+    const verifyResetCode = async (code: string) => {
+        if (!auth) {
+            throw new Error("Authentication service is not configured.");
+        }
+        return await verifyPasswordResetCode(auth, code);
+    };
+
+    const confirmReset = async (code: string, newPassword: string) => {
+        if (!auth) {
+            throw new Error("Authentication service is not configured.");
+        }
+        await confirmPasswordReset(auth, code, newPassword);
+    };
+
     const refreshUserProfile = async () => {
         if (!user || !db) return;
 
@@ -188,6 +206,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 signUp,
                 signOut,
                 resetPassword,
+                verifyResetCode,
+                confirmReset,
                 refreshUserProfile,
             }}
         >

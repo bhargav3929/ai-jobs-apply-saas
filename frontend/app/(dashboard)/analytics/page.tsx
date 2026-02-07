@@ -5,7 +5,7 @@ import { BarChart, TrendingUp, Mail, Target, ArrowUpRight } from "lucide-react";
 
 export default function AnalyticsPage() {
     return (
-        <div className="p-6 md:p-8 max-w-[1200px] mx-auto space-y-6">
+        <div className="p-5 md:p-6 lg:p-8 xl:p-10 space-y-6">
             <motion.div
                 initial={{ opacity: 0, y: 12 }}
                 animate={{ opacity: 1, y: 0 }}
