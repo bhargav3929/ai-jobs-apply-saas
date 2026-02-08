@@ -195,7 +195,7 @@ async def delete_resume(authorization: str = Header(None)):
     
     from firebase_admin import storage
     
-    # 1. Try to delete from Storage
+    # 1. Try to delete from Cloud Storage
     try:
         bucket = storage.bucket()
         blob_path = f"resumes/{user_id}/resume.pdf"
@@ -205,6 +205,16 @@ async def delete_resume(authorization: str = Header(None)):
             print(f"Deleted resume blob: {blob_path}")
     except Exception as e:
         print(f"Error deleting from storage (could be ignored if file missing): {e}")
+
+    # 1b. Also delete from Firestore fallback storage (resumes collection)
+    if db:
+        try:
+            resume_doc = db.collection("resumes").document(user_id).get()
+            if resume_doc.exists:
+                db.collection("resumes").document(user_id).delete()
+                print(f"Deleted Firestore fallback resume for user: {user_id}")
+        except Exception as e:
+            print(f"Error deleting Firestore fallback resume: {e}")
 
     # 2. Clear fields in Firestore
     if db:
