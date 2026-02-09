@@ -1,15 +1,33 @@
-import { getAuth } from "firebase/auth";
+import { getAuth, onAuthStateChanged } from "firebase/auth";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000/api";
 
-async function getAuthToken() {
+async function getAuthToken(): Promise<string | null> {
     const auth = getAuth();
-    if (!auth.currentUser) return null;
-    return await auth.currentUser.getIdToken();
+    // If currentUser is already available, get token immediately
+    if (auth.currentUser) {
+        return await auth.currentUser.getIdToken();
+    }
+    // Otherwise wait for Firebase auth to initialize (handles fresh page loads)
+    return new Promise((resolve) => {
+        const timeout = setTimeout(() => resolve(null), 5000);
+        const unsubscribe = onAuthStateChanged(auth, async (user) => {
+            unsubscribe();
+            clearTimeout(timeout);
+            if (user) {
+                resolve(await user.getIdToken());
+            } else {
+                resolve(null);
+            }
+        });
+    });
 }
 
 export async function uploadResume(file: File) {
     const token = await getAuthToken();
+    if (!token) {
+        throw new Error("Not authenticated. Please log in again.");
+    }
     const formData = new FormData();
     formData.append("resume", file); // Backend expects 'resume' field, not 'file'
 
@@ -37,6 +55,7 @@ export async function uploadResume(file: File) {
 
 export async function deleteResume() {
     const token = await getAuthToken();
+    if (!token) throw new Error("Not authenticated. Please log in again.");
     const response = await fetch(`${API_URL}/user/delete-resume`, {
         method: "POST",
         headers: {
@@ -65,17 +84,19 @@ export async function getTaskStatus(taskId: string) {
 
 export async function getDashboardStats() {
     const token = await getAuthToken();
+    if (!token) throw new Error("Not authenticated. Please log in again.");
     const response = await fetch(`${API_URL}/dashboard/stats`, {
         headers: {
             "Authorization": `Bearer ${token}`
         }
-    }); // Backend uses Auth token, no query param needed
+    });
     if (!response.ok) throw new Error("Failed to fetch stats");
     return response.json();
 }
 
 export async function getApplications(limit = 50, offset = 0) {
     const token = await getAuthToken();
+    if (!token) throw new Error("Not authenticated. Please log in again.");
     const response = await fetch(`${API_URL}/dashboard/applications?limit=${limit}&offset=${offset}`, {
         headers: { "Authorization": `Bearer ${token}` }
     });
@@ -85,6 +106,7 @@ export async function getApplications(limit = 50, offset = 0) {
 
 export async function getRecentActivity() {
     const token = await getAuthToken();
+    if (!token) throw new Error("Not authenticated. Please log in again.");
     const response = await fetch(`${API_URL}/dashboard/applications`, {
         headers: {
             "Authorization": `Bearer ${token}`
@@ -130,6 +152,7 @@ export async function verifySmtp(email: string, password: string) {
 
 export async function saveUserLinks(links: { github?: string; portfolio?: string }) {
     const token = await getAuthToken();
+    if (!token) throw new Error("Not authenticated. Please log in again.");
     const response = await fetch(`${API_URL}/user/save-links`, {
         method: "POST",
         headers: {
@@ -145,6 +168,7 @@ export async function saveUserLinks(links: { github?: string; portfolio?: string
 
 export async function toggleAutomation(isActive: boolean) {
     const token = await getAuthToken();
+    if (!token) throw new Error("Not authenticated. Please log in again.");
     const response = await fetch(`${API_URL}/user/toggle-automation`, {
         method: "POST",
         headers: {

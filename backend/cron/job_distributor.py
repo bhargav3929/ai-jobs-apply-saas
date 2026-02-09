@@ -1,6 +1,6 @@
 import logging
 import random
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from core.firebase import db
 from google.cloud.firestore_v1.base_query import FieldFilter
 from tasks.email_tasks import send_application_email
@@ -27,7 +27,7 @@ def main():
 
     logger.info("========================================")
     logger.info("=== STARTING JOB DISTRIBUTION ===")
-    logger.info(f"=== Time: {datetime.now().isoformat()} ===")
+    logger.info(f"=== Time: {datetime.now(timezone.utc).isoformat()} ===")
     logger.info("========================================")
 
     if not db:
@@ -73,7 +73,7 @@ def main():
 
     # Step 2: Get today's jobs
     logger.info("Step 2: Fetching today's jobs...")
-    today_start = datetime.now().replace(hour=0, minute=0, second=0)
+    today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
     logger.info(f"  Filtering jobs scrapedAt >= {today_start.isoformat()}")
     jobs_ref = db.collection("jobs")
     jobs = jobs_ref \

@@ -2,7 +2,7 @@
 
 import { useState, useCallback } from "react";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000/api";
 
 const JOB_CATEGORIES = [
     "Software Developer",
@@ -133,13 +133,22 @@ export default function AdminPage() {
                 headers: { Authorization: header },
             });
             if (!res.ok) {
-                setLoginError("Invalid credentials");
+                if (res.status === 401) {
+                    setLoginError("Invalid credentials");
+                } else {
+                    setLoginError(`Server error (${res.status}). Please try again.`);
+                }
                 return;
             }
             setAuthHeader(header);
             setIsLoggedIn(true);
-        } catch {
-            setLoginError("Cannot reach backend server");
+        } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : String(err);
+            if (msg.includes("Failed to fetch") || msg.includes("NetworkError") || msg.includes("CORS")) {
+                setLoginError(`Cannot reach backend server at ${API_URL}. Check that the backend is running and CORS is configured.`);
+            } else {
+                setLoginError(`Connection error: ${msg}`);
+            }
         }
     };
 

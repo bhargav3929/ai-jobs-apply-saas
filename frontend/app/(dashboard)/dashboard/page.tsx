@@ -190,6 +190,7 @@ export default function DashboardPage() {
     const [activities, setActivities] = React.useState<any[]>([]);
     const [automationActive, setAutomationActive] = React.useState(userProfile?.isActive ?? true);
     const [toggling, setToggling] = React.useState(false);
+    const [dataError, setDataError] = React.useState<string | null>(null);
 
     // Compute derived personalization data for AI commentary
     const derived = React.useMemo(
@@ -235,8 +236,15 @@ export default function DashboardPage() {
             const [s, a] = await Promise.all([getDashboardStats(), getRecentActivity()]);
             setStatsData(s);
             setActivities(a);
-        } catch (e) {
-            console.error(e);
+            setDataError(null);
+        } catch (e: unknown) {
+            const msg = e instanceof Error ? e.message : String(e);
+            console.error("Dashboard load failed:", msg);
+            if (msg.includes("Not authenticated")) {
+                setDataError("Session expired. Please refresh the page or log in again.");
+            } else {
+                setDataError("Could not load dashboard data. Retrying...");
+            }
         }
     }, []);
 
@@ -309,6 +317,21 @@ export default function DashboardPage() {
 
     return (
         <div className="p-5 md:p-6 lg:p-8 xl:p-10 space-y-4 lg:space-y-5">
+
+            {/* ===== Error Banner ===== */}
+            {dataError && (
+                <motion.div
+                    initial={{ opacity: 0, y: -8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="flex items-center gap-3 px-4 py-3 rounded-xl bg-amber-50 border border-amber-200"
+                >
+                    <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0" />
+                    <p className="text-sm text-amber-800 flex-1">{dataError}</p>
+                    <button onClick={loadData} className="text-xs font-medium text-amber-700 hover:text-amber-900 underline">
+                        Retry
+                    </button>
+                </motion.div>
+            )}
 
             {/* ===== AI Agent Banner with 3D Avatar ===== */}
             <motion.div

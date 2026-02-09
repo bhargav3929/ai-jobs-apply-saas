@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from core.firebase import db
 import uuid
 
@@ -44,7 +44,7 @@ class CustomLogger:
                 "level": level,
                 "message": message,
                 "metadata": metadata or {},
-                "timestamp": datetime.now().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             })
         except Exception as e:
             self.logger.error(f"Failed to log to Firestore: {e}")

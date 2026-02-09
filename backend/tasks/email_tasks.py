@@ -2,7 +2,7 @@ import logging
 from celery import Celery
 from celery.exceptions import MaxRetriesExceededError
 import smtplib
-from datetime import datetime
+from datetime import datetime, timezone
 import uuid
 import redis
 from firebase_admin import firestore
@@ -118,7 +118,7 @@ def send_application_email(self, user_id: str, job_id: str):
             "emailSubject": email_content["subject"],
             "emailBody": email_content["body"],
             "templateId": email_content.get("templateId"),
-            "sentAt": datetime.now().isoformat(),
+            "sentAt": datetime.now(timezone.utc).isoformat(),
             "sentToEmail": recipient,
             "status": "sent" if smtp_result["success"] else "failed",
             "smtpResponse": smtp_result.get("response", ""),
@@ -135,14 +135,14 @@ def send_application_email(self, user_id: str, job_id: str):
             db.collection("jobs").document(job_id).set({
                 "appliedByUsers": firestore.ArrayUnion([user_id]),
                 "applicationCount": firestore.Increment(1),
-                "lastAppliedAt": datetime.now().isoformat()
+                "lastAppliedAt": datetime.now(timezone.utc).isoformat()
             }, merge=True)
 
             # Update user stats
             db.collection("users").document(user_id).set({
                 "applicationsToday": firestore.Increment(1),
                 "applicationsTotal": firestore.Increment(1),
-                "lastApplicationSentAt": datetime.now().isoformat()
+                "lastApplicationSentAt": datetime.now(timezone.utc).isoformat()
             }, merge=True)
 
             logger.info(f"[{task_id}] === COMPLETE (SUCCESS) === user={user_id} job={job_id} to={recipient}")

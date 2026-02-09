@@ -4,7 +4,9 @@ from core.firebase import db
 from google.cloud.firestore_v1.base_query import FieldFilter
 import firebase_admin.auth as auth
 
-# Indian Standard Time (UTC+5:30)
+# Use UTC everywhere for consistency — Railway runs in UTC, timestamps stored in UTC
+UTC = timezone.utc
+# Indian Standard Time (UTC+5:30) — only used for user-facing batch schedule
 IST = timezone(timedelta(hours=5, minutes=30))
 
 router = APIRouter(prefix="/api/dashboard", tags=["dashboard"])
@@ -18,6 +20,23 @@ async def verify_token(authorization: str = Header(None)):
         return decoded
     except Exception:
         raise HTTPException(status_code=401, detail="Invalid token")
+
+
+def _parse_sent_at(sent_at_str: str) -> datetime | None:
+    """Parse a sentAt ISO string into a UTC-aware datetime, handling multiple formats."""
+    if not sent_at_str:
+        return None
+    try:
+        # Handle timezone-aware strings (e.g. "2026-02-09T14:30:00+00:00")
+        if "+" in sent_at_str or sent_at_str.endswith("Z"):
+            dt = datetime.fromisoformat(sent_at_str.replace("Z", "+00:00"))
+            return dt.astimezone(UTC)
+        # Handle naive strings (legacy data without timezone) — assume UTC (Railway server time)
+        dt = datetime.fromisoformat(sent_at_str)
+        return dt.replace(tzinfo=UTC)
+    except (ValueError, TypeError):
+        return None
+
 
 @router.get("/stats")
 async def get_dashboard_stats(authorization: str = Header(None)):
@@ -33,13 +52,12 @@ async def get_dashboard_stats(authorization: str = Header(None)):
         raise HTTPException(status_code=404, detail="User not found")
     user_data = user_doc.to_dict()
 
-    # 2. Compute all metrics dynamically from the applications collection (IST)
-    now = datetime.now(IST)
+    # 2. Compute all metrics using proper datetime comparisons (UTC)
+    now = datetime.now(UTC)
     today_midnight = now.replace(hour=0, minute=0, second=0, microsecond=0)
-    today_start = today_midnight.strftime("%Y-%m-%dT%H:%M:%S")
-    yesterday_start = (today_midnight - timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%S")
-    week_start = (now - timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:%S")
-    month_start = (now - timedelta(days=30)).strftime("%Y-%m-%dT%H:%M:%S")
+    yesterday_midnight = today_midnight - timedelta(days=1)
+    week_ago = now - timedelta(days=7)
+    month_ago = now - timedelta(days=30)
 
     apps_today = 0
     apps_yesterday = 0
@@ -53,17 +71,19 @@ async def get_dashboard_stats(authorization: str = Header(None)):
             .order_by("sentAt", direction="DESCENDING") \
             .stream():
         data = app_doc.to_dict()
-        sent_at = data.get("sentAt", "")
+        sent_at_str = data.get("sentAt", "")
         apps_total += 1
 
-        if sent_at >= today_start:
-            apps_today += 1
-        elif sent_at >= yesterday_start:
-            apps_yesterday += 1
-        if sent_at >= week_start:
-            apps_this_week += 1
-        if sent_at >= month_start:
-            apps_this_month += 1
+        sent_dt = _parse_sent_at(sent_at_str)
+        if sent_dt:
+            if sent_dt >= today_midnight:
+                apps_today += 1
+            elif sent_dt >= yesterday_midnight:
+                apps_yesterday += 1
+            if sent_dt >= week_ago:
+                apps_this_week += 1
+            if sent_dt >= month_ago:
+                apps_this_month += 1
 
         if len(recent_applications) < 5:
             recent_applications.append(data)
@@ -73,19 +93,19 @@ async def get_dashboard_stats(authorization: str = Header(None)):
     if created_at and apps_total > 0:
         try:
             created_dt = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
-            # Convert to IST for consistent comparison
-            created_dt_ist = created_dt.astimezone(IST)
-            account_age_days = max((now - created_dt_ist).days, 1)
+            created_dt_utc = created_dt.astimezone(UTC)
+            account_age_days = max((now - created_dt_utc).days, 1)
             average_daily = round(apps_total / account_age_days, 1)
         except (ValueError, TypeError):
             average_daily = 0
     else:
         average_daily = 0
 
-    # 3. Next batch time (distribution runs at 9 AM IST daily)
-    next_batch = now.replace(hour=9, minute=0, second=0, microsecond=0)
-    if now >= next_batch:
-        next_batch = next_batch + timedelta(days=1)
+    # 3. Next batch time (distribution runs at 9 AM IST = 3:30 AM UTC daily)
+    now_ist = now.astimezone(IST)
+    next_batch_ist = now_ist.replace(hour=9, minute=0, second=0, microsecond=0)
+    if now_ist >= next_batch_ist:
+        next_batch_ist = next_batch_ist + timedelta(days=1)
 
     return {
         "userName": user_data.get("name"),
@@ -96,7 +116,7 @@ async def get_dashboard_stats(authorization: str = Header(None)):
         "applicationsTotal": apps_total,
         "isActive": user_data.get("isActive", False),
         "averageDaily": average_daily,
-        "nextBatchTime": next_batch.isoformat(),
+        "nextBatchTime": next_batch_ist.isoformat(),
         "recentApplications": recent_applications
     }
 

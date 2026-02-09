@@ -1,7 +1,7 @@
 from enum import Enum
 from typing import Optional
 import sentry_sdk
-from datetime import datetime
+from datetime import datetime, timezone
 import uuid
 from core.firebase import db
 
@@ -28,7 +28,7 @@ def log_error_to_db(error_type: ErrorType, error: Exception, context: dict):
             "errorType": error_type.value,
             "message": str(error),
             "context": context,
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         })
     except Exception:
         pass

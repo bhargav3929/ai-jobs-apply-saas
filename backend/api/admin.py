@@ -1,10 +1,12 @@
 import asyncio
 import base64
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, HTTPException, Header, BackgroundTasks, Request
 from core.firebase import db
 from google.cloud.firestore_v1.base_query import FieldFilter
+
+UTC = timezone.utc
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -60,21 +62,50 @@ async def get_admin_stats(authorization: str = Header(None)):
             "disabledByAdmin": data.get("disabledByAdmin", False),
         })
 
-    today_start = datetime.now().replace(hour=0, minute=0, second=0).isoformat()
+    now_utc = datetime.now(UTC)
+    today_midnight_utc = now_utc.replace(hour=0, minute=0, second=0, microsecond=0)
+
     apps_today = 0
     try:
-        for _ in db.collection("applications").where(filter=FieldFilter("sentAt", ">=", today_start)).stream():
-            apps_today += 1
+        for a_doc in db.collection("applications").order_by("sentAt", direction="DESCENDING").stream():
+            sent_at_str = a_doc.to_dict().get("sentAt", "")
+            if not sent_at_str:
+                continue
+            try:
+                if "+" in sent_at_str or sent_at_str.endswith("Z"):
+                    sent_dt = datetime.fromisoformat(sent_at_str.replace("Z", "+00:00")).astimezone(UTC)
+                else:
+                    sent_dt = datetime.fromisoformat(sent_at_str).replace(tzinfo=UTC)
+                if sent_dt >= today_midnight_utc:
+                    apps_today += 1
+                else:
+                    break  # Since sorted DESC, no more today's entries
+            except (ValueError, TypeError):
+                continue
     except Exception:
         pass
 
     jobs_today = 0
     jobs_with_email = 0
     try:
-        for j in db.collection("jobs").where(filter=FieldFilter("scrapedAt", ">=", today_start)).stream():
-            jobs_today += 1
-            if j.to_dict().get("recruiterEmail"):
-                jobs_with_email += 1
+        for j in db.collection("jobs").order_by("scrapedAt", direction="DESCENDING").stream():
+            d = j.to_dict()
+            scraped_str = d.get("scrapedAt", "")
+            if not scraped_str:
+                continue
+            try:
+                if "+" in scraped_str or scraped_str.endswith("Z"):
+                    scraped_dt = datetime.fromisoformat(scraped_str.replace("Z", "+00:00")).astimezone(UTC)
+                else:
+                    scraped_dt = datetime.fromisoformat(scraped_str).replace(tzinfo=UTC)
+                if scraped_dt >= today_midnight_utc:
+                    jobs_today += 1
+                    if d.get("recruiterEmail"):
+                        jobs_with_email += 1
+                else:
+                    break  # Since sorted DESC, no more today's entries
+            except (ValueError, TypeError):
+                continue
     except Exception:
         pass
 
@@ -110,17 +141,25 @@ async def get_jobs(
 ):
     verify_admin_basic(authorization)
     try:
-        # Build date filter
-        date_cutoff = None
-        now = datetime.now()
+        # Build date filter using proper UTC datetimes
+        date_cutoff_dt = None
+        now = datetime.now(UTC)
         if date_filter == "today":
-            date_cutoff = now.replace(hour=0, minute=0, second=0).isoformat()
+            date_cutoff_dt = now.replace(hour=0, minute=0, second=0, microsecond=0)
         elif date_filter == "yesterday":
-            yesterday = now - timedelta(days=1)
-            date_cutoff = yesterday.replace(hour=0, minute=0, second=0).isoformat()
+            date_cutoff_dt = (now - timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
         elif date_filter == "week":
-            week_ago = now - timedelta(days=7)
-            date_cutoff = week_ago.isoformat()
+            date_cutoff_dt = now - timedelta(days=7)
+
+        def _parse_ts(ts_str: str) -> datetime | None:
+            if not ts_str:
+                return None
+            try:
+                if "+" in ts_str or ts_str.endswith("Z"):
+                    return datetime.fromisoformat(ts_str.replace("Z", "+00:00")).astimezone(UTC)
+                return datetime.fromisoformat(ts_str).replace(tzinfo=UTC)
+            except (ValueError, TypeError):
+                return None
 
         # Fetch all matching jobs (Firestore doesn't support offset natively)
         all_jobs = []
@@ -130,9 +169,11 @@ async def get_jobs(
             scraped_at = d.get("scrapedAt", "")
             job_cat = d.get("jobCategory", "Other")
 
-            # Date filter
-            if date_cutoff and scraped_at < date_cutoff:
-                continue
+            # Date filter using proper datetime comparison
+            if date_cutoff_dt:
+                scraped_dt = _parse_ts(scraped_at)
+                if not scraped_dt or scraped_dt < date_cutoff_dt:
+                    continue
 
             # Track category breakdown before category filter
             category_breakdown[job_cat] = category_breakdown.get(job_cat, 0) + 1
@@ -175,16 +216,24 @@ async def get_applications(
 ):
     verify_admin_basic(authorization)
     try:
-        date_cutoff = None
-        now = datetime.now()
+        date_cutoff_dt = None
+        now = datetime.now(UTC)
         if date_filter == "today":
-            date_cutoff = now.replace(hour=0, minute=0, second=0).isoformat()
+            date_cutoff_dt = now.replace(hour=0, minute=0, second=0, microsecond=0)
         elif date_filter == "yesterday":
-            yesterday = now - timedelta(days=1)
-            date_cutoff = yesterday.replace(hour=0, minute=0, second=0).isoformat()
+            date_cutoff_dt = (now - timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
         elif date_filter == "week":
-            week_ago = now - timedelta(days=7)
-            date_cutoff = week_ago.isoformat()
+            date_cutoff_dt = now - timedelta(days=7)
+
+        def _parse_ts_app(ts_str: str) -> datetime | None:
+            if not ts_str:
+                return None
+            try:
+                if "+" in ts_str or ts_str.endswith("Z"):
+                    return datetime.fromisoformat(ts_str.replace("Z", "+00:00")).astimezone(UTC)
+                return datetime.fromisoformat(ts_str).replace(tzinfo=UTC)
+            except (ValueError, TypeError):
+                return None
 
         all_apps = []
         status_breakdown = {}
@@ -193,8 +242,10 @@ async def get_applications(
             sent_at = d.get("sentAt", "")
             app_status = d.get("status", "unknown")
 
-            if date_cutoff and sent_at < date_cutoff:
-                continue
+            if date_cutoff_dt:
+                sent_dt = _parse_ts_app(sent_at)
+                if not sent_dt or sent_dt < date_cutoff_dt:
+                    continue
 
             status_breakdown[app_status] = status_breakdown.get(app_status, 0) + 1
 
@@ -242,7 +293,7 @@ async def toggle_user_status(uid: str, authorization: str = Header(None)):
     db.collection("system_logs").add({
         "type": "info", "level": "info",
         "message": f"Admin {action} user {uid}",
-        "timestamp": datetime.now().isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
     })
     return {"success": True, "disabledByAdmin": new_status, "message": f"User {action}"}
 
@@ -270,7 +321,7 @@ async def trigger_scrape(request: Request, background_tasks: BackgroundTasks, au
     db.collection("system_logs").add({
         "type": "info", "level": "info",
         "message": f"Manual scrape triggered by admin (limits: {category_limits or 'default'})",
-        "timestamp": datetime.now().isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
     })
     return {"success": True, "message": "Scraping started in background. Check logs for progress."}
 
@@ -282,7 +333,7 @@ async def trigger_distribute(background_tasks: BackgroundTasks, authorization: s
     db.collection("system_logs").add({
         "type": "info", "level": "info",
         "message": "Manual distribution triggered by admin",
-        "timestamp": datetime.now().isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
     })
     return {"success": True, "message": "Distribution started in background. Emails will be queued via Celery."}
 
@@ -312,7 +363,7 @@ async def erase_jobs_database(authorization: str = Header(None)):
     db.collection("system_logs").add({
         "type": "warning", "level": "warning",
         "message": f"Admin erased jobs database: {deleted} jobs deleted",
-        "timestamp": datetime.now().isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
     })
     return {"success": True, "message": f"Deleted {deleted} jobs from database."}
 
@@ -341,6 +392,6 @@ async def emergency_stop(authorization: str = Header(None)):
     db.collection("system_logs").add({
         "type": "warning", "level": "warning",
         "message": f"EMERGENCY STOP: purged {purged} pending, revoked {revoked} active/reserved tasks",
-        "timestamp": datetime.now().isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
     })
     return {"success": True, "purged": purged, "revoked": revoked}

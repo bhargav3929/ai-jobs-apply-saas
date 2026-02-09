@@ -1,6 +1,6 @@
 import asyncio
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from services.scraper import LinkedInScraper
 from services.email_extractor import EmailExtractor
 from services.job_classifier import JobClassifier
@@ -62,12 +62,12 @@ async def main(category_limits=None):
                     "postText": post.get("text", ""),
                     "recruiterEmail": email,
                     "jobCategory": category,
-                    "scrapedAt": datetime.now().isoformat(),
+                    "scrapedAt": datetime.now(timezone.utc).isoformat(),
                     "appliedByUsers": [],
                     "applicationCount": 0,
                     "lastAppliedAt": None,
-                    "createdAt": datetime.now().isoformat(),
-                    "expiresAt": (datetime.now() + timedelta(days=2)).isoformat()
+                    "createdAt": datetime.now(timezone.utc).isoformat(),
+                    "expiresAt": (datetime.now(timezone.utc) + timedelta(days=2)).isoformat()
                 }
             except Exception as e:
                 print(f"Error processing post: {e}")
@@ -88,7 +88,7 @@ async def main(category_limits=None):
         # Step 3: Remove duplicates
         existing_urns = set()
         query = db.collection("jobs") \
-            .where("scrapedAt", ">=", datetime.now().replace(hour=0, minute=0, second=0).isoformat()) \
+            .where("scrapedAt", ">=", datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0).isoformat()) \
             .stream()
         
         for doc in query:
@@ -117,7 +117,7 @@ async def main(category_limits=None):
                 "jobsStored": total_written,
                 "duration": f"{duration}s"
             },
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
         
         db.collection("system_logs").add(log_data)

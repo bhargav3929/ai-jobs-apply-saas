@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from core.firebase import db
 
 def main():
@@ -12,7 +12,7 @@ def main():
         return
 
     # Delete jobs older than 2 days
-    cutoff = (datetime.now() - timedelta(hours=48)).isoformat()
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=48)).isoformat()
     
     jobs = db.collection("jobs") \
         .where("scrapedAt", "<", cutoff) \

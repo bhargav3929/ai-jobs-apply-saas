@@ -5,7 +5,7 @@ import uuid
 import re
 import json
 import firebase_admin.auth as auth
-from datetime import datetime
+from datetime import datetime, timezone
 from openai import OpenAI
 from core.settings import GROQ_API_KEY
 
@@ -82,7 +82,7 @@ async def setup_smtp(data: dict, authorization: str = Header(None)):
         "smtpEmail": smtp_email,
         "smtpPassword": encrypted_password,
         "smtpTested": True,
-        "updatedAt": datetime.now().isoformat()
+        "updatedAt": datetime.now(timezone.utc).isoformat()
     }, merge=True)
     
     return {"success": True}
@@ -96,7 +96,7 @@ async def toggle_automation(data: dict, authorization: str = Header(None)):
     
     db.collection("users").document(user_id).set({
         "isActive": is_active,
-        "updatedAt": datetime.now().isoformat()
+        "updatedAt": datetime.now(timezone.utc).isoformat()
     }, merge=True)
     
     return {"success": True, "isActive": is_active}
@@ -137,6 +137,7 @@ async def upload_resume(resume: UploadFile = File(...), authorization: str = Hea
 
     # 2. Upload to Firebase Storage
     resume_url = ""
+    storage_error = None
     try:
         bucket = storage.bucket()
         blob_path = f"resumes/{user['uid']}/resume.pdf"
@@ -145,20 +146,35 @@ async def upload_resume(resume: UploadFile = File(...), authorization: str = Hea
         resume_url = f"gs://{bucket.name}/{blob_path}"
         print(f"Resume uploaded to Firebase Storage: {resume_url}")
     except Exception as e:
+        storage_error = str(e)
         print(f"Firebase Storage upload failed (bucket may not be enabled): {e}")
         import base64
-        resume_url = f"firestore://{user['uid']}/resume"
-        try:
-            if db:
-                db.collection("resumes").document(user['uid']).set({
-                    "content": base64.b64encode(content).decode('utf-8'),
-                    "filename": "resume.pdf",
-                    "content_type": "application/pdf",
-                    "size": len(content)
-                })
-                print(f"Resume saved to Firestore fallback: {resume_url}")
-        except Exception as fb_err:
-            print(f"Firestore fallback also failed: {fb_err}")
+        # Firestore document limit is ~1MB. Base64 adds ~33% overhead.
+        # Only use Firestore fallback for files under 700KB to stay safe.
+        if len(content) > 700 * 1024:
+            print(f"File too large for Firestore fallback ({len(content)} bytes). Skipping fallback.")
+            # Still save metadata without file content — user can re-upload later
+            resume_url = ""
+        else:
+            resume_url = f"firestore://{user['uid']}/resume"
+            try:
+                if db:
+                    db.collection("resumes").document(user['uid']).set({
+                        "content": base64.b64encode(content).decode('utf-8'),
+                        "filename": "resume.pdf",
+                        "content_type": "application/pdf",
+                        "size": len(content)
+                    })
+                    print(f"Resume saved to Firestore fallback: {resume_url}")
+            except Exception as fb_err:
+                print(f"Firestore fallback also failed: {fb_err}")
+                resume_url = ""
+
+    if not resume_url and storage_error:
+        raise HTTPException(
+            status_code=500,
+            detail="Resume storage is temporarily unavailable. Please try again in a few minutes."
+        )
 
     # 3. Save resumeUrl + extracted links + metadata to user document
     user_update = {
@@ -166,7 +182,7 @@ async def upload_resume(resume: UploadFile = File(...), authorization: str = Hea
         "resumeMetadata": {
             "filename": resume.filename,
             "size": len(content),
-            "uploadedAt": datetime.now().isoformat()
+            "uploadedAt": datetime.now(timezone.utc).isoformat()
         }
     } if resume_url else {}
     
@@ -362,7 +378,7 @@ async def save_links(data: dict, authorization: str = Header(None)):
 
     db.collection("users").document(user_id).set({
         "extractedLinks": links,
-        "updatedAt": datetime.now().isoformat()
+        "updatedAt": datetime.now(timezone.utc).isoformat()
     }, merge=True)
 
     return {"success": True, "links": links}
