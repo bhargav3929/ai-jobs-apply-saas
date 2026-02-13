@@ -24,6 +24,8 @@ celery_app.conf.update(
     enable_utc=True,
     worker_pool=worker_pool,
     worker_prefetch_multiplier=1,
+    result_expires=3600,
+    task_reject_on_worker_lost=True,
 )
 
 @worker_ready.connect

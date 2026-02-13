@@ -75,13 +75,15 @@ def send_via_smtp(user_smtp: str, user_password: str, recipient: str,
 
         # Send via SMTP (STARTTLS on 587 — Railway blocks port 465)
         logger.info("Connecting to smtp.gmail.com:587 (STARTTLS)...")
-        with smtplib.SMTP('smtp.gmail.com', 587, timeout=15) as server:
+        with smtplib.SMTP('smtp.gmail.com', 587, timeout=30) as server:
+            server.timeout = 30
             server.ehlo()
             server.starttls()
             server.ehlo()
             logger.info("Connected. Logging in...")
             server.login(user_smtp, user_password)
             logger.info("Login successful. Sending message...")
+            server.timeout = 60
             server.send_message(msg)
             logger.info("Message sent successfully!")
 

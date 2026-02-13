@@ -1,6 +1,6 @@
 import logging
 from celery import Celery
-from celery.exceptions import MaxRetriesExceededError
+from celery.exceptions import MaxRetriesExceededError, SoftTimeLimitExceeded
 import smtplib
 from datetime import datetime, timezone
 import uuid
@@ -20,14 +20,25 @@ redis_client = redis.from_url(REDIS_URL)
 
 logger = logging.getLogger("email_tasks")
 
-@celery_app.task(bind=True, max_retries=3, default_retry_delay=300)
+@celery_app.task(
+    bind=True,
+    max_retries=3,
+    default_retry_delay=300,
+    rate_limit='2/m',
+    soft_time_limit=120,
+    time_limit=180,
+)
 def send_application_email(self, user_id: str, job_id: str):
     """
-    Production-ready email sending with retries
+    Production-ready email sending with retries.
+    rate_limit='2/m' ensures max 2 emails/minute per worker even if
+    all tasks become ready at once (e.g. after worker restart).
     """
     task_id = self.request.id
     retry_num = self.request.retries
     logger.info(f"[{task_id}] === START send_application_email === user={user_id} job={job_id} retry={retry_num}")
+
+    lock_key = f"email_lock:{user_id}:{job_id}"
 
     try:
         if not db:
@@ -35,7 +46,6 @@ def send_application_email(self, user_id: str, job_id: str):
             raise Exception("Firestore not initialized")
 
         # Acquire Redis lock to prevent duplicate execution by multiple workers
-        lock_key = f"email_lock:{user_id}:{job_id}"
         if not redis_client.set(lock_key, task_id, nx=True, ex=600):
             logger.info(f"[{task_id}] SKIPPED (duplicate) — another worker already processing user={user_id} job={job_id}")
             return {"status": "skipped", "reason": "duplicate_lock"}
@@ -166,6 +176,11 @@ def send_application_email(self, user_id: str, job_id: str):
         log_error_to_db(ErrorType.SMTP_AUTH_FAILED, e, {"userId": user_id, "jobId": job_id})
         return {"status": "failed", "reason": "smtp_auth"}
 
+    except SoftTimeLimitExceeded:
+        logger.error(f"[{task_id}] SOFT TIME LIMIT (120s) — task took too long, user={user_id} job={job_id}")
+        log_error_to_db(ErrorType.UNKNOWN, Exception("Task soft time limit exceeded"), {"userId": user_id, "jobId": job_id})
+        return {"status": "failed", "reason": "timeout"}
+
     except Exception as e:
         logger.error(f"[{task_id}] EXCEPTION: {type(e).__name__}: {e}")
         # Retry on other errors
@@ -178,3 +193,10 @@ def send_application_email(self, user_id: str, job_id: str):
             logger.error(f"[{task_id}] MAX RETRIES EXCEEDED — giving up on user={user_id} job={job_id}")
             log_error_to_db(ErrorType.UNKNOWN, e, {"userId": user_id, "jobId": job_id})
             return {"status": "failed", "reason": "max_retries"}
+
+    finally:
+        # Always release Redis lock when task completes (success or failure)
+        try:
+            redis_client.delete(lock_key)
+        except Exception:
+            pass

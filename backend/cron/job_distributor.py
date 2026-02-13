@@ -89,7 +89,8 @@ def main():
         has_email = bool(job_data.get("recruiterEmail", "").strip())
         if not has_email:
             jobs_without_email += 1
-            logger.warning(f"  Job {job_data.get('jobId', job.id)} has NO recruiterEmail — will fail at send time")
+            logger.warning(f"  Job {job_data.get('jobId', job.id)} has NO recruiterEmail — skipping")
+            continue
         if category not in jobs_by_category:
             jobs_by_category[category] = []
         jobs_by_category[category].append(job_data)
