@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta, timezone
 from core.firebase import db
+from google.cloud.firestore_v1.base_query import FieldFilter
 
 def main():
     """
@@ -25,7 +26,7 @@ def main():
     cutoff = (datetime.now(timezone.utc) - timedelta(hours=48)).isoformat()
 
     jobs = db.collection("jobs") \
-        .where("scrapedAt", "<", cutoff) \
+        .where(filter=FieldFilter("scrapedAt", "<", cutoff)) \
         .stream()
 
     batch = db.batch()

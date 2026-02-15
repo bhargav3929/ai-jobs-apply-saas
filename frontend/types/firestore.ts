@@ -140,3 +140,70 @@ export interface AdminStats {
     newUsersThisMonth: number;
     churnRate: number;
 }
+
+// ============ RESUME ANALYSIS ============
+
+export type SuggestionPriority = "high" | "medium" | "low";
+
+export interface ResumeSuggestion {
+    text: string;
+    priority: SuggestionPriority;
+}
+
+export interface ResumeSection {
+    content: string;
+    score: number;
+    reasoning: string;
+    suggestions: ResumeSuggestion[];
+    displayName?: string;
+}
+
+// Dynamic — sections are detected from the actual resume, not predefined
+export type ResumeSectionName = string;
+
+export interface IndustryBenchmark {
+    category: string;
+    averageScore: number;
+    percentile: number;
+    topSkillsInDemand: string[];
+}
+
+export interface ContactInfo {
+    name?: string;
+    email?: string | null;
+    phone?: string | null;
+    location?: string | null;
+    linkedin?: string | null;
+    github?: string | null;
+    portfolio?: string | null;
+    otherLinks?: string[];
+}
+
+export interface ResumeAnalysis {
+    sections: Record<string, ResumeSection>;
+    contactInfo?: ContactInfo;
+    overallScore: number;
+    atsScore: number;
+    atsIssues: string[];
+    keywordsFound: string[];
+    keywordsMissing: string[];
+    industryBenchmark: IndustryBenchmark;
+    strengthHighlights: string[];
+    criticalImprovements: string[];
+}
+
+export interface ResumeAnalysisResponse {
+    analysis: ResumeAnalysis;
+    resumeText: string;
+    candidateName?: string;
+    contactInfo?: ContactInfo;
+    metadata: {
+        filename: string;
+        size: number;
+        uploadedAt: string;
+        analyzedAt: string;
+        cachedUntil: string;
+    };
+    extractedLinks: { github?: string; portfolio?: string; linkedin?: string };
+    jobCategory: string;
+}

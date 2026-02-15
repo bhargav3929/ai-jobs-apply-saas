@@ -138,14 +138,23 @@ function computeDerivedCommentaryData(
 }
 
 /* ---- Animated counter ---- */
-function AnimatedNumber({ value, suffix = "" }: { value: number | string; suffix?: string }) {
-    const [display, setDisplay] = React.useState(0);
+function AnimatedNumber({ value, loading, suffix = "" }: { value: number | string; loading?: boolean; suffix?: string }) {
+    const [display, setDisplay] = React.useState<number | null>(null);
     const numValue = typeof value === "string" ? parseInt(value) || 0 : value;
-    const animated = React.useRef(false);
+    const hasAnimated = React.useRef(false);
 
     React.useEffect(() => {
-        if (animated.current || numValue === 0) return;
-        animated.current = true;
+        if (loading) return; // Don't animate while loading
+        if (hasAnimated.current) {
+            // Already animated once — just snap to new value
+            setDisplay(numValue);
+            return;
+        }
+        if (numValue === 0) {
+            setDisplay(0);
+            return;
+        }
+        hasAnimated.current = true;
         const duration = 1200;
         const start = performance.now();
         const step = (now: number) => {
@@ -155,7 +164,11 @@ function AnimatedNumber({ value, suffix = "" }: { value: number | string; suffix
             if (progress < 1) requestAnimationFrame(step);
         };
         requestAnimationFrame(step);
-    }, [numValue]);
+    }, [numValue, loading]);
+
+    if (loading || display === null) {
+        return <span className="inline-block w-8 h-7 bg-[var(--color-border-subtle)] rounded animate-pulse" />;
+    }
 
     return <>{display}{suffix}</>;
 }
@@ -184,13 +197,42 @@ function StatusPill({ active, onClick, loading }: { active: boolean; onClick: ()
     );
 }
 
+const DASHBOARD_CACHE_KEY = "jobagent_dashboard_cache";
+
+function loadCachedDashboard(): { stats: any; activities: any[] } | null {
+    try {
+        const raw = sessionStorage.getItem(DASHBOARD_CACHE_KEY);
+        if (!raw) return null;
+        return JSON.parse(raw);
+    } catch {
+        return null;
+    }
+}
+
+function saveDashboardCache(stats: any, activities: any[]) {
+    try {
+        sessionStorage.setItem(DASHBOARD_CACHE_KEY, JSON.stringify({ stats, activities }));
+    } catch { /* quota exceeded — ignore */ }
+}
+
 export default function DashboardPage() {
     const { userProfile, refreshUserProfile } = useAuth();
-    const [statsData, setStatsData] = React.useState<any>(null);
-    const [activities, setActivities] = React.useState<any[]>([]);
     const [automationActive, setAutomationActive] = React.useState(userProfile?.isActive ?? true);
     const [toggling, setToggling] = React.useState(false);
     const [dataError, setDataError] = React.useState<string | null>(null);
+    const [statsLoading, setStatsLoading] = React.useState(true);
+
+    // Initialize from sessionStorage cache so returning users see data instantly
+    const [statsData, setStatsData] = React.useState<any>(() => {
+        const cached = loadCachedDashboard();
+        if (cached?.stats) return cached.stats;
+        return null;
+    });
+    const [activities, setActivities] = React.useState<any[]>(() => {
+        const cached = loadCachedDashboard();
+        if (cached?.activities) return cached.activities;
+        return [];
+    });
 
     // Compute derived personalization data for AI commentary
     const derived = React.useMemo(
@@ -205,7 +247,7 @@ export default function DashboardPage() {
     const commentary = useAICommentary({
         userName: userProfile?.name,
         active: automationActive,
-        isFirstLogin: appTotal === 0 && activities.length === 0,
+        isFirstLogin: !statsLoading && appTotal === 0 && activities.length === 0,
         applicationsToday: statsData?.applicationsToday ?? 0,
         applicationsTotal: statsData?.applicationsTotal ?? 0,
         applicationsThisWeek: statsData?.applicationsThisWeek ?? 0,
@@ -231,21 +273,30 @@ export default function DashboardPage() {
     }, [commentary?.id]);
 
     // Initial data load + periodic polling every 30s for live updates
+    // Stats and activities are fetched independently so one failure doesn't wipe both
     const loadData = React.useCallback(async () => {
-        try {
-            const [s, a] = await Promise.all([getDashboardStats(), getRecentActivity()]);
-            setStatsData(s);
-            setActivities(a);
+        const statsPromise = getDashboardStats()
+            .then((s) => { setStatsData(s); return s; })
+            .catch((e) => { console.error("Stats load failed:", e); return null; });
+
+        const activitiesPromise = getRecentActivity()
+            .then((a) => { setActivities(a); return a; })
+            .catch((e) => { console.error("Activities load failed:", e); return null; });
+
+        const [s, a] = await Promise.all([statsPromise, activitiesPromise]);
+
+        // Cache whatever succeeded
+        if (s || a) {
+            saveDashboardCache(s ?? statsData, a ?? activities);
             setDataError(null);
-        } catch (e: unknown) {
-            const msg = e instanceof Error ? e.message : String(e);
-            console.error("Dashboard load failed:", msg);
-            if (msg.includes("Not authenticated")) {
-                setDataError("Session expired. Please refresh the page or log in again.");
-            } else {
-                setDataError("Could not load dashboard data. Retrying...");
-            }
         }
+
+        // Both failed
+        if (!s && !a) {
+            setDataError("Could not load dashboard data. Retrying...");
+        }
+
+        setStatsLoading(false);
     }, []);
 
     React.useEffect(() => {
@@ -378,7 +429,7 @@ export default function DashboardPage() {
                             <TrendingUp className="w-3 h-3 text-[var(--color-brand-primary)] opacity-0 group-hover:opacity-100 transition-opacity" />
                         </div>
                         <p className="text-xl md:text-2xl lg:text-3xl font-bold text-[var(--color-brand-dark)] tracking-tight leading-none">
-                            <AnimatedNumber value={stat.value} suffix={"suffix" in stat ? (stat as any).suffix : ""} />
+                            <AnimatedNumber value={stat.value} loading={statsLoading && statsData === null} suffix={"suffix" in stat ? (stat as any).suffix : ""} />
                         </p>
                         <span className="text-[11px] lg:text-xs text-[var(--color-text-tertiary)] font-medium mt-1 lg:mt-1.5 block">{stat.label}</span>
                         {"note" in stat && stat.note && (

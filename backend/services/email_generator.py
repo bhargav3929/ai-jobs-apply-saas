@@ -19,7 +19,7 @@ def generate_email_with_ai(user: dict, job: dict) -> dict:
     logger.info(f"Generating email for user='{user_name}' job='{job_title[:60]}'")
 
     # Step 1: Get random template (1-60)
-    template_id = random.randint(1, 70)
+    template_id = random.randint(1, 60)
     template = {}
     logger.info(f"Selected template ID: {template_id}")
 
@@ -41,6 +41,11 @@ def generate_email_with_ai(user: dict, job: dict) -> dict:
             "body": "Hi,\n\nI came across your post about {JOB_TITLE}. I have experience in {SKILLS}.\n\n{LINKS_SECTION}\n\nI've attached my resume for your review.\n\nBest regards,\n{USER_NAME}"
         }
         logger.info("Using hardcoded fallback template")
+
+    # Step 1b: Use enhanced resume text if available (from resume analysis page edits)
+    resume_override = user.get("resumeTextOverride")
+    if resume_override:
+        logger.info(f"Using resumeTextOverride for user='{user_name}' (length={len(resume_override)})")
 
     # Step 2: Build user context with links
     post_text = job.get("postText", "")[:1000]
@@ -65,6 +70,11 @@ def generate_email_with_ai(user: dict, job: dict) -> dict:
 
     skills_str = ", ".join(user_skills[:8]) if isinstance(user_skills, list) and user_skills else "relevant technologies"
 
+    # Include resume context if enhanced version is available
+    resume_context = ""
+    if resume_override:
+        resume_context = f"\n\nENHANCED RESUME CONTEXT (use this to personalize the email):\n{resume_override[:2000]}"
+
     # Step 3: Use AI to generate the email
     logger.info(f"Calling Groq API (model=openai/gpt-oss-120b, postText length={len(post_text)})")
     client = OpenAI(
@@ -83,7 +93,7 @@ TEMPLATE STYLE (use as inspiration for tone, not copy verbatim):
 USER DETAILS:
 - Name: {user_name}
 - Key Skills: {skills_str}
-- {links_context}
+- {links_context}{resume_context}
 
 RULES:
 1. Write a natural, personalized email that references specifics from the job post

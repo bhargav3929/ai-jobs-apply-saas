@@ -22,7 +22,7 @@ function RotatingText() {
             {rotatingWords.map((word, i) => (
                 <motion.span
                     key={word}
-                    className="text-gradient"
+                    className="text-[var(--color-brand-primary)]"
                     initial={false}
                     animate={{
                         opacity: i === index ? 1 : 0,

@@ -18,6 +18,9 @@ APIFY_ACTOR_ID = os.getenv("APIFY_ACTOR_ID", "Wpp1BZ6yGWjySadk3") # Default to L
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
+# Mistral OCR
+MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY")
+
 # Security
 ENCRYPTION_SECRET = os.getenv("ENCRYPTION_SECRET", "default_secret_please_change_me_32chars")
 ADMIN_EMAIL = os.getenv("ADMIN_EMAIL")

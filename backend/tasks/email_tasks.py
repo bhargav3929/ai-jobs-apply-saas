@@ -39,6 +39,7 @@ def send_application_email(self, user_id: str, job_id: str):
     logger.info(f"[{task_id}] === START send_application_email === user={user_id} job={job_id} retry={retry_num}")
 
     lock_key = f"email_lock:{user_id}:{job_id}"
+    _will_retry = False  # Track whether task will be retried (keep lock held)
 
     try:
         if not db:
@@ -188,15 +189,20 @@ def send_application_email(self, user_id: str, job_id: str):
             next_retry = retry_num + 1
             countdown = 60 * (2 ** retry_num)
             logger.warning(f"[{task_id}] Scheduling retry {next_retry}/3 in {countdown}s...")
+            _will_retry = True
             raise self.retry(exc=e, countdown=countdown)
         except MaxRetriesExceededError:
+            _will_retry = False
             logger.error(f"[{task_id}] MAX RETRIES EXCEEDED — giving up on user={user_id} job={job_id}")
             log_error_to_db(ErrorType.UNKNOWN, e, {"userId": user_id, "jobId": job_id})
             return {"status": "failed", "reason": "max_retries"}
 
     finally:
-        # Always release Redis lock when task completes (success or failure)
-        try:
-            redis_client.delete(lock_key)
-        except Exception:
-            pass
+        # Release Redis lock UNLESS the task will be retried.
+        # Keeping the lock during retry prevents another worker from
+        # picking up the same user+job and sending a duplicate email.
+        if not _will_retry:
+            try:
+                redis_client.delete(lock_key)
+            except Exception:
+                pass

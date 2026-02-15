@@ -4,11 +4,13 @@ from utils.encryption import encryptor
 import uuid
 import re
 import json
+import logging
 import firebase_admin.auth as auth
 from datetime import datetime, timezone
 from openai import OpenAI
 from core.settings import GROQ_API_KEY
 
+logger = logging.getLogger("users_api")
 router = APIRouter(prefix="/api/user", tags=["users"])
 
 # Middleware-like dependency
@@ -40,7 +42,10 @@ async def get_profile(authorization: str = Header(None)):
 async def setup_smtp(data: dict, authorization: str = Header(None)):
     user = await verify_token(authorization)
     user_id = user["uid"]
-    
+
+    if not db:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+
     smtp_email = data.get("smtpEmail")
     smtp_password = data.get("smtpPassword")
     
@@ -65,7 +70,7 @@ async def setup_smtp(data: dict, authorization: str = Header(None)):
         await run_in_threadpool(test_smtp_connection)
         
     except Exception as e:
-        print(f"SMTP Verification Failed: {e}")
+        logger.warning(f"SMTP Verification Failed: {e}")
         # Improve error message for common issues
         msg = str(e)
         if "Username and Password not accepted" in msg:
@@ -91,9 +96,12 @@ async def setup_smtp(data: dict, authorization: str = Header(None)):
 async def toggle_automation(data: dict, authorization: str = Header(None)):
     user = await verify_token(authorization)
     user_id = user["uid"]
-    
+
+    if not db:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+
     is_active = data.get("isActive", False)
-    
+
     db.collection("users").document(user_id).set({
         "isActive": is_active,
         "updatedAt": datetime.now(timezone.utc).isoformat()
@@ -121,17 +129,27 @@ async def upload_resume(resume: UploadFile = File(...), authorization: str = Hea
 
     try:
         # 1. Parse content for text + skills + links
-        reader = PdfReader(BytesIO(content))
+        # Try Mistral OCR first for better accuracy on complex layouts
         text = ""
-        for page in reader.pages:
-            text += page.extract_text()
+        try:
+            from services.ocr_service import extract_text_with_ocr
+            text = extract_text_with_ocr(content)
+            logger.info(f"Resume text extracted via Mistral OCR ({len(text)} chars)")
+        except Exception as ocr_err:
+            logger.warning(f"Mistral OCR failed, using pypdf fallback: {ocr_err}")
+
+        if not text.strip():
+            reader = PdfReader(BytesIO(content))
+            for page in reader.pages:
+                text += page.extract_text() or ""
+            logger.info(f"Resume text extracted via pypdf ({len(text)} chars)")
 
         # Extract links using AI for accuracy (catches obfuscated/formatted links)
         extracted_links = _extract_links_from_resume(text)
         found_skills = _extract_skills_ai(text)
 
     except Exception as e:
-        print(f"Error parsing resume: {e}")
+        logger.error(f"Error parsing resume: {e}")
         found_skills = ["general"]
         extracted_links = {}
 
@@ -144,15 +162,15 @@ async def upload_resume(resume: UploadFile = File(...), authorization: str = Hea
         blob = bucket.blob(blob_path)
         blob.upload_from_string(content, content_type="application/pdf")
         resume_url = f"gs://{bucket.name}/{blob_path}"
-        print(f"Resume uploaded to Firebase Storage: {resume_url}")
+        logger.info(f"Resume uploaded to Firebase Storage: {resume_url}")
     except Exception as e:
         storage_error = str(e)
-        print(f"Firebase Storage upload failed (bucket may not be enabled): {e}")
+        logger.error(f"Firebase Storage upload failed (bucket may not be enabled): {e}")
         import base64
         # Firestore document limit is ~1MB. Base64 adds ~33% overhead.
         # Only use Firestore fallback for files under 700KB to stay safe.
         if len(content) > 700 * 1024:
-            print(f"File too large for Firestore fallback ({len(content)} bytes). Skipping fallback.")
+            logger.warning(f"File too large for Firestore fallback ({len(content)} bytes). Skipping fallback.")
             # Still save metadata without file content — user can re-upload later
             resume_url = ""
         else:
@@ -165,9 +183,9 @@ async def upload_resume(resume: UploadFile = File(...), authorization: str = Hea
                         "content_type": "application/pdf",
                         "size": len(content)
                     })
-                    print(f"Resume saved to Firestore fallback: {resume_url}")
+                    logger.info(f"Resume saved to Firestore fallback: {resume_url}")
             except Exception as fb_err:
-                print(f"Firestore fallback also failed: {fb_err}")
+                logger.error(f"Firestore fallback also failed: {fb_err}")
                 resume_url = ""
 
     if not resume_url and storage_error:
@@ -185,15 +203,40 @@ async def upload_resume(resume: UploadFile = File(...), authorization: str = Hea
             "uploadedAt": datetime.now(timezone.utc).isoformat()
         }
     } if resume_url else {}
-    
+
     if extracted_links:
         user_update["extractedLinks"] = extracted_links
-        
+
+    # Clear old resume override and edits from previous resume.
+    # Use DELETE_FIELD to fully remove stale data (not just set to null).
+    if resume_url:
+        from google.cloud import firestore as firestore_client
+        user_update["resumeTextOverride"] = firestore_client.DELETE_FIELD
+        user_update["resumeTextUpdatedAt"] = firestore_client.DELETE_FIELD
+
     if user_update and db:
+        # This write is CRITICAL — if it fails, the old resumeTextOverride
+        # persists and analysis will use the OLD resume text.
         try:
-            db.collection("users").document(user['uid']).set(user_update, merge=True)
+            db.collection("users").document(user['uid']).update(user_update)
         except Exception as e:
-            print(f"Failed to update user document: {e}")
+            logger.critical(f"Failed to update user document after resume upload: {e}")
+            raise HTTPException(
+                status_code=500,
+                detail="Resume file was saved but profile update failed. Please try uploading again."
+            )
+
+        # Invalidate old analysis cache so next visit gets fresh analysis
+        try:
+            db.collection("resume_analyses").document(user['uid']).delete()
+        except Exception as e:
+            logger.warning(f"Failed to delete analysis cache: {e}")
+
+        # Clear old section edits (they belong to the previous resume)
+        try:
+            db.collection("resume_edits").document(user['uid']).delete()
+        except Exception as e:
+            logger.warning(f"Failed to delete section edits: {e}")
 
     return {
         "success": True,
@@ -218,9 +261,9 @@ async def delete_resume(authorization: str = Header(None)):
         blob = bucket.blob(blob_path)
         if blob.exists():
             blob.delete()
-            print(f"Deleted resume blob: {blob_path}")
+            logger.info(f"Deleted resume blob: {blob_path}")
     except Exception as e:
-        print(f"Error deleting from storage (could be ignored if file missing): {e}")
+        logger.warning(f"Error deleting from storage (could be ignored if file missing): {e}")
 
     # 1b. Also delete from Firestore fallback storage (resumes collection)
     if db:
@@ -228,27 +271,37 @@ async def delete_resume(authorization: str = Header(None)):
             resume_doc = db.collection("resumes").document(user_id).get()
             if resume_doc.exists:
                 db.collection("resumes").document(user_id).delete()
-                print(f"Deleted Firestore fallback resume for user: {user_id}")
+                logger.info(f"Deleted Firestore fallback resume for user: {user_id}")
         except Exception as e:
-            print(f"Error deleting Firestore fallback resume: {e}")
+            logger.warning(f"Error deleting Firestore fallback resume: {e}")
 
     # 2. Clear fields in Firestore
     if db:
         try:
-            # We use FieldValue.delete() to remove specific fields
-            # But firebase-admin-python uses update({field: firestore.DELETE_FIELD})
             from google.cloud import firestore
-            
+
             ref = db.collection("users").document(user_id)
             ref.update({
                 "resumeUrl": firestore.DELETE_FIELD,
-                "resumeMetadata": firestore.DELETE_FIELD
-                # We KEEP extractedLinks and extractedSkills as the user might want to keep the profile data
+                "resumeMetadata": firestore.DELETE_FIELD,
+                "resumeTextOverride": firestore.DELETE_FIELD,
             })
         except Exception as e:
-            print(f"Error updating firestore on delete: {e}")
+            logger.error(f"Error updating firestore on delete: {e}")
             raise HTTPException(status_code=500, detail="Failed to update database")
-            
+
+        # Invalidate analysis cache
+        try:
+            db.collection("resume_analyses").document(user_id).delete()
+        except Exception:
+            pass
+
+        # Clear section edits
+        try:
+            db.collection("resume_edits").document(user_id).delete()
+        except Exception:
+            pass
+
     return {"success": True}
 
 
@@ -260,25 +313,39 @@ def _extract_links_from_resume(text: str) -> dict:
     """
     links = {}
 
-    # Regex: catch common URL patterns
+    # Regex: catch URLs with protocol prefix
     url_pattern = r'https?://[^\s,)>\]\"\']+|www\.[^\s,)>\]\"\']+'
     found_urls = re.findall(url_pattern, text, re.IGNORECASE)
 
+    # Also catch bare domain URLs (no https:// prefix) — common in OCR output
+    # Matches: linkedin.com/in/..., github.com/..., bhargavcodes.com, etc.
+    bare_url_pattern = r'(?:linkedin\.com/in/[^\s,)>\]\"\']+|github\.com/[^\s,)>\]\"\']+|[a-zA-Z0-9][\w-]*\.(?:com|dev|io|me|tech|design|net|org|app)(?:/[^\s,)>\]\"\']*)?)'
+    bare_urls = re.findall(bare_url_pattern, text, re.IGNORECASE)
+    # Deduplicate: only add bare URLs not already covered by prefixed URLs
+    prefixed_set = {u.lower().rstrip(".") for u in found_urls}
+    for bu in bare_urls:
+        bu_clean = bu.rstrip(".")
+        # Skip if already found via the prefixed pattern
+        if not any(bu_clean.lower() in p for p in prefixed_set):
+            found_urls.append(bu_clean)
+
     for url in found_urls:
-        url_lower = url.lower()
+        url_lower = url.lower().rstrip(".")
         if "github.com" in url_lower and "github" not in links:
-            links["github"] = url.rstrip(".")
-        elif "linkedin.com" in url_lower:
-            pass  # Skip linkedin, not needed for emails
+            clean = url.rstrip(".")
+            links["github"] = clean if clean.startswith("http") else f"https://{clean}"
+        elif "linkedin.com" in url_lower and "linkedin" not in links:
+            clean = url.rstrip(".")
+            links["linkedin"] = clean if clean.startswith("http") else f"https://{clean}"
         elif any(domain in url_lower for domain in [
             "vercel.app", "netlify.app", "herokuapp.com", "pages.dev",
             "github.io", "portfolio", "behance.net", "dribbble.com",
-            ".dev", ".design", ".me", ".io", ".tech"
+            ".dev", ".design", ".me", ".tech"
         ]) and "portfolio" not in links:
-            links["portfolio"] = url.rstrip(".")
-        elif "portfolio" not in links and "github" not in links:
-            # Could be a personal site
-            links["portfolio"] = url.rstrip(".")
+            clean = url.rstrip(".")
+            links["portfolio"] = clean if clean.startswith("http") else f"https://{clean}"
+        # NOTE: Don't blindly assign unknown URLs as portfolio — the AI analysis
+        # contactInfo will correctly identify the real portfolio link.
 
     # If regex found nothing, try AI extraction
     if not links:
@@ -293,9 +360,9 @@ def _extract_links_from_resume(text: str) -> dict:
                     {
                         "role": "system",
                         "content": (
-                            "Extract portfolio and github URLs from this resume text. "
-                            "Return ONLY valid JSON: {\"github\": \"url or null\", \"portfolio\": \"url or null\"}. "
-                            "Do NOT include LinkedIn URLs. If no links found, return {\"github\": null, \"portfolio\": null}."
+                            "Extract portfolio, github, and linkedin URLs from this resume text. "
+                            "Return ONLY valid JSON: {\"github\": \"url or null\", \"portfolio\": \"url or null\", \"linkedin\": \"url or null\"}. "
+                            "If no links found, return {\"github\": null, \"portfolio\": null, \"linkedin\": null}."
                         )
                     },
                     {"role": "user", "content": text[:3000]}
@@ -309,8 +376,10 @@ def _extract_links_from_resume(text: str) -> dict:
                 links["github"] = result["github"]
             if result.get("portfolio"):
                 links["portfolio"] = result["portfolio"]
+            if result.get("linkedin"):
+                links["linkedin"] = result["linkedin"]
         except Exception as e:
-            print(f"AI link extraction failed: {e}")
+            logger.warning(f"AI link extraction failed: {e}")
 
     return links
 
@@ -350,7 +419,7 @@ def _extract_skills_ai(text: str) -> list:
                     return v[:15]
         return ["general"]
     except Exception as e:
-        print(f"AI skill extraction failed: {e}")
+        logger.warning(f"AI skill extraction failed: {e}")
         # Fallback to basic keyword matching
         keywords = ["python", "react", "javascript", "node.js", "aws", "docker",
                      "sql", "java", "typescript", "go", "rust", "kubernetes",
@@ -363,6 +432,9 @@ async def save_links(data: dict, authorization: str = Header(None)):
     """Save user's portfolio/github links (from onboarding step)."""
     user = await verify_token(authorization)
     user_id = user["uid"]
+
+    if not db:
+        raise HTTPException(status_code=503, detail="Database unavailable")
 
     github = data.get("github", "").strip()
     portfolio = data.get("portfolio", "").strip()

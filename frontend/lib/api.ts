@@ -107,7 +107,7 @@ export async function getApplications(limit = 50, offset = 0) {
 export async function getRecentActivity() {
     const token = await getAuthToken();
     if (!token) throw new Error("Not authenticated. Please log in again.");
-    const response = await fetch(`${API_URL}/dashboard/applications`, {
+    const response = await fetch(`${API_URL}/dashboard/applications?limit=5`, {
         headers: {
             "Authorization": `Bearer ${token}`
         }
@@ -180,4 +180,75 @@ export async function toggleAutomation(isActive: boolean) {
 
     if (!response.ok) throw new Error("Failed to toggle automation");
     return response.json();
+}
+
+// ============ RESUME ANALYSIS ============
+
+export async function analyzeResume(force = false) {
+    const token = await getAuthToken();
+    if (!token) throw new Error("Not authenticated. Please log in again.");
+    const url = force ? `${API_URL}/resume/analyze?force=true` : `${API_URL}/resume/analyze`;
+    const response = await fetch(url, {
+        headers: { "Authorization": `Bearer ${token}` }
+    });
+    if (!response.ok) {
+        let errorMessage = "Failed to analyze resume";
+        try {
+            const errorData = await response.json();
+            errorMessage = errorData.detail || errorMessage;
+        } catch (e) { /* response was not JSON */ }
+        throw new Error(errorMessage);
+    }
+    return response.json();
+}
+
+export async function updateResumeSection(section: string, content: string, action: "replace" | "enhance") {
+    const token = await getAuthToken();
+    if (!token) throw new Error("Not authenticated. Please log in again.");
+    const response = await fetch(`${API_URL}/resume/update-section`, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${token}`
+        },
+        body: JSON.stringify({ section, content, action }),
+    });
+    if (!response.ok) {
+        let errorMessage = "Failed to update section";
+        try {
+            const errorData = await response.json();
+            errorMessage = errorData.detail || errorMessage;
+        } catch (e) { /* response was not JSON */ }
+        throw new Error(errorMessage);
+    }
+    return response.json();
+}
+
+export async function regenerateResumeText() {
+    const token = await getAuthToken();
+    if (!token) throw new Error("Not authenticated. Please log in again.");
+    const response = await fetch(`${API_URL}/resume/regenerate-text`, {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${token}` }
+    });
+    if (!response.ok) throw new Error("Failed to regenerate resume text");
+    return response.json();
+}
+
+export async function downloadResumePdf() {
+    const token = await getAuthToken();
+    if (!token) throw new Error("Not authenticated. Please log in again.");
+    const response = await fetch(`${API_URL}/resume/download-pdf`, {
+        headers: { "Authorization": `Bearer ${token}` }
+    });
+    if (!response.ok) throw new Error("Failed to download PDF");
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "resume_optimized.pdf";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
 }

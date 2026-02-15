@@ -109,6 +109,7 @@ export default function ApplicationsPage() {
     const [loading, setLoading] = React.useState(true);
     const [loadingMore, setLoadingMore] = React.useState(false);
     const [hasMore, setHasMore] = React.useState(true);
+    const [error, setError] = React.useState<string | null>(null);
 
     // Filters & sort
     const [search, setSearch] = React.useState("");
@@ -128,8 +129,9 @@ export default function ApplicationsPage() {
                 const data = await getApplications(PAGE_SIZE, 0);
                 setApplications(data);
                 setHasMore(data.length === PAGE_SIZE);
-            } catch (e) {
+            } catch (e: any) {
                 console.error(e);
+                setError(e.message || "Failed to load applications");
             } finally {
                 setLoading(false);
             }
@@ -144,8 +146,9 @@ export default function ApplicationsPage() {
             const data = await getApplications(PAGE_SIZE, applications.length);
             setApplications((prev) => [...prev, ...data]);
             setHasMore(data.length === PAGE_SIZE);
-        } catch (e) {
+        } catch (e: any) {
             console.error(e);
+            setError(e.message || "Failed to load more applications");
         } finally {
             setLoadingMore(false);
         }
@@ -270,6 +273,20 @@ export default function ApplicationsPage() {
                     )}
                 </div>
             </motion.div>
+
+            {/* Error banner */}
+            {error && (
+                <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-red-50 border border-red-100">
+                    <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0" />
+                    <p className="text-[13px] text-red-700 flex-1">{error}</p>
+                    <button
+                        onClick={() => { setError(null); setLoading(true); getApplications(PAGE_SIZE, 0).then(data => { setApplications(data); setHasMore(data.length === PAGE_SIZE); }).catch(e => setError(e.message)).finally(() => setLoading(false)); }}
+                        className="text-[12px] font-semibold text-red-600 hover:text-red-800 px-2 py-1 rounded-lg hover:bg-red-100 transition-colors"
+                    >
+                        Retry
+                    </button>
+                </div>
+            )}
 
             {/* Table card */}
             <motion.div

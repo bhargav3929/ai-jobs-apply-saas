@@ -3,6 +3,7 @@
 import { motion } from "framer-motion";
 import { Star, Quote } from "lucide-react";
 import Marquee from "react-fast-marquee";
+import Image from "next/image";
 
 const testimonials = [
     {
@@ -11,6 +12,7 @@ const testimonials = [
         company: "Landed role at Razorpay",
         content: "600+ applications went out in my first month. I got 8 interview calls without writing a single email. This is the unfair advantage every job seeker needs.",
         avatar: "PS",
+        image: "/testimonials/priya.png",
         color: "from-violet-500 to-purple-600",
         rating: 5,
     },
@@ -20,6 +22,7 @@ const testimonials = [
         company: "Hired at a Series B startup",
         content: "Recruiters have no idea it's automated — because every email comes from my Gmail and reads like I spent 20 minutes writing it. Got 3 offers in 5 weeks.",
         avatar: "RM",
+        image: "/testimonials/rahul.png",
         color: "from-cyan-500 to-blue-600",
         rating: 5,
     },
@@ -29,6 +32,7 @@ const testimonials = [
         company: "Now at Flipkart",
         content: "I went from mass-applying on job boards with 0 replies to 12 interview invites in one month. The AI personalizes every single email — it's not even close to a template.",
         avatar: "AR",
+        image: "/testimonials/ananya.png",
         color: "from-emerald-500 to-teal-600",
         rating: 5,
     },
@@ -38,6 +42,7 @@ const testimonials = [
         company: "Joining a YC startup",
         content: "It only targets AI/ML roles — not random dev jobs. Out of 600 applications last month, every single one was relevant. That kind of precision is impossible manually.",
         avatar: "KI",
+        image: "/testimonials/karthik.png",
         color: "from-orange-500 to-amber-600",
         rating: 5,
     },
@@ -47,6 +52,7 @@ const testimonials = [
         company: "3 offers in 4 weeks",
         content: "Setup took 3 minutes. By the next morning, 20 personalized emails were already sent. Two weeks later, I had 3 interview calls lined up. Best ₹1,199 I ever spent.",
         avatar: "SP",
+        image: "/testimonials/sneha.png",
         color: "from-pink-500 to-rose-600",
         rating: 5,
     },
@@ -56,6 +62,7 @@ const testimonials = [
         company: "4 offers in 6 weeks",
         content: "Manually, I could send maybe 5 applications a day. JobAgent sent 600+ in my first month — all personalized, all from my inbox. The math just makes sense.",
         avatar: "AD",
+        image: "/testimonials/arjun.png",
         color: "from-indigo-500 to-violet-600",
         rating: 5,
     },
@@ -85,8 +92,13 @@ function TestimonialCard({ t }: { t: typeof testimonials[0] }) {
 
                 {/* Author */}
                 <div className="flex items-center gap-3 pt-4 border-t border-[var(--color-border-subtle)]">
-                    <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${t.color} flex items-center justify-center flex-shrink-0 shadow-sm`}>
-                        <span className="text-white text-xs font-bold tracking-wide">{t.avatar}</span>
+                    <div className="relative w-10 h-10 rounded-xl overflow-hidden shadow-sm flex-shrink-0">
+                        <Image
+                            src={t.image}
+                            alt={t.name}
+                            fill
+                            className="object-cover"
+                        />
                     </div>
                     <div className="min-w-0">
                         <p className="text-sm font-semibold text-[var(--color-brand-dark)] truncate">{t.name}</p>

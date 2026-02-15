@@ -2,7 +2,7 @@ import os
 from fastapi import FastAPI
 from contextlib import asynccontextmanager
 from core.sentry import init_sentry
-from api import users, jobs, admin
+from api import users, jobs, admin, resume
 from core.settings import ENVIRONMENT
 
 # Initialize Sentry
@@ -24,8 +24,8 @@ app.middleware("http")(rate_limit_middleware)
 from fastapi.middleware.cors import CORSMiddleware
 
 _allowed_origins = [
-    "http://localhost:3000", "http://localhost:3001", "http://localhost:3002",
-    "http://127.0.0.1:3000", "http://127.0.0.1:3001", "http://127.0.0.1:3002",
+    "http://localhost:3000", "http://localhost:3001", "http://localhost:3002", "http://localhost:4000",
+    "http://127.0.0.1:3000", "http://127.0.0.1:3001", "http://127.0.0.1:3002", "http://127.0.0.1:4000",
 ]
 # Add FRONTEND_URL from env (e.g. Vercel production URL)
 _frontend_url = os.getenv("FRONTEND_URL", "")
@@ -51,6 +51,7 @@ app.include_router(jobs.router)
 app.include_router(admin.router)
 from api import dashboard
 app.include_router(dashboard.router)
+app.include_router(resume.router)
 
 @app.get("/health")
 async def health_check():

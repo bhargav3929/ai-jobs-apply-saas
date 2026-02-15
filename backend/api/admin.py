@@ -128,7 +128,7 @@ async def get_logs(limit: int = 50, authorization: str = Header(None)):
         ).limit(limit)
         return [log.to_dict() for log in logs_ref.stream()]
     except Exception as e:
-        return {"error": str(e)}
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/jobs")
@@ -203,7 +203,7 @@ async def get_jobs(
             "categoryBreakdown": category_breakdown,
         }
     except Exception as e:
-        return {"error": str(e)}
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/applications")
@@ -271,7 +271,7 @@ async def get_applications(
             "statusBreakdown": status_breakdown,
         }
     except Exception as e:
-        return {"error": str(e)}
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/users/{uid}/toggle-status")

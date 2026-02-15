@@ -482,36 +482,7 @@ export default function OnboardingPage() {
 
                             {/* ═══ Step 3: Links ═══ */}
                             {currentStep === 3 && (
-                                <div className="space-y-5">
-                                    {hasExtractedLinks && (
-                                        <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="p-5 rounded-2xl bg-[var(--color-success)]/[0.04] border border-[var(--color-success)]/15">
-                                            <div className="flex items-center gap-2 mb-3">
-                                                <CheckCircle2 className="w-4 h-4 text-[var(--color-success)]" />
-                                                <p className="text-sm font-semibold text-[var(--color-success)]">Links found in your resume</p>
-                                            </div>
-                                            <div className="space-y-2">
-                                                {extractedLinks.github && (
-                                                    <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-white border border-[var(--color-border-subtle)]">
-                                                        <div className="w-7 h-7 rounded-lg bg-[var(--color-surface)] flex items-center justify-center flex-shrink-0">
-                                                            <GitBranchPlus className="w-3.5 h-3.5 text-[var(--color-text-tertiary)]" />
-                                                        </div>
-                                                        <span className="text-sm text-[var(--color-text-secondary)] truncate">{extractedLinks.github}</span>
-                                                        <CheckCircle2 className="w-4 h-4 text-[var(--color-success)] ml-auto flex-shrink-0" />
-                                                    </div>
-                                                )}
-                                                {extractedLinks.portfolio && (
-                                                    <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-white border border-[var(--color-border-subtle)]">
-                                                        <div className="w-7 h-7 rounded-lg bg-[var(--color-surface)] flex items-center justify-center flex-shrink-0">
-                                                            <Globe className="w-3.5 h-3.5 text-[var(--color-text-tertiary)]" />
-                                                        </div>
-                                                        <span className="text-sm text-[var(--color-text-secondary)] truncate">{extractedLinks.portfolio}</span>
-                                                        <CheckCircle2 className="w-4 h-4 text-[var(--color-success)] ml-auto flex-shrink-0" />
-                                                    </div>
-                                                )}
-                                            </div>
-                                        </motion.div>
-                                    )}
-
+                                <div className="space-y-4">
                                     {!hasExtractedLinks && wantsToAddLinks === null && (
                                         <motion.div initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} className="text-center py-8">
                                             <div className="w-14 h-14 rounded-2xl bg-[var(--color-brand-primary)]/10 flex items-center justify-center mx-auto mb-4">
@@ -532,44 +503,43 @@ export default function OnboardingPage() {
 
                                     {(hasExtractedLinks || wantsToAddLinks === true) && (
                                         <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
-                                            <div className="space-y-2">
-                                                <Label className="text-sm font-medium text-[var(--color-text-primary)]">GitHub Profile</Label>
-                                                <div className="relative">
-                                                    <GitBranchPlus className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--color-text-tertiary)]" />
-                                                    <Input placeholder="https://github.com/yourusername" value={githubLink} onChange={(e) => setGithubLink(e.target.value)}
-                                                        className="pl-10 h-12 rounded-xl border-[var(--color-border-subtle)] focus:border-[var(--color-brand-primary)] focus:ring-[var(--color-brand-primary)]/20 bg-[var(--color-surface)]" />
+                                            {/* Compact extracted badge */}
+                                            {hasExtractedLinks && (
+                                                <div className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-[var(--color-success)]/[0.06] border border-[var(--color-success)]/15 w-fit">
+                                                    <CheckCircle2 className="w-3.5 h-3.5 text-[var(--color-success)]" />
+                                                    <p className="text-xs font-semibold text-[var(--color-success)]">Auto-filled from your resume — edit if needed</p>
                                                 </div>
-                                            </div>
-                                            <div className="space-y-2">
-                                                <Label className="text-sm font-medium text-[var(--color-text-primary)]">Portfolio Website</Label>
-                                                <div className="relative">
-                                                    <Globe className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--color-text-tertiary)]" />
-                                                    <Input placeholder="https://yourportfolio.com" value={portfolioLink} onChange={(e) => setPortfolioLink(e.target.value)}
-                                                        className="pl-10 h-12 rounded-xl border-[var(--color-border-subtle)] focus:border-[var(--color-brand-primary)] focus:ring-[var(--color-brand-primary)]/20 bg-[var(--color-surface)]" />
+                                            )}
+
+                                            {/* Side-by-side inputs */}
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                                <div className="space-y-1.5">
+                                                    <Label className="text-sm font-medium text-[var(--color-text-primary)]">GitHub Profile</Label>
+                                                    <div className="relative">
+                                                        <GitBranchPlus className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--color-text-tertiary)]" />
+                                                        <Input placeholder="https://github.com/yourusername" value={githubLink} onChange={(e) => setGithubLink(e.target.value)}
+                                                            className="pl-10 h-11 rounded-xl border-[var(--color-border-subtle)] focus:border-[var(--color-brand-primary)] focus:ring-[var(--color-brand-primary)]/20 bg-[var(--color-surface)]" />
+                                                    </div>
+                                                </div>
+                                                <div className="space-y-1.5">
+                                                    <Label className="text-sm font-medium text-[var(--color-text-primary)]">Portfolio Website</Label>
+                                                    <div className="relative">
+                                                        <Globe className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--color-text-tertiary)]" />
+                                                        <Input placeholder="https://yourportfolio.com" value={portfolioLink} onChange={(e) => setPortfolioLink(e.target.value)}
+                                                            className="pl-10 h-11 rounded-xl border-[var(--color-border-subtle)] focus:border-[var(--color-brand-primary)] focus:ring-[var(--color-brand-primary)]/20 bg-[var(--color-surface)]" />
+                                                    </div>
                                                 </div>
                                             </div>
 
-                                            {/* Response rate boost indicator */}
-                                            <motion.div
-                                                initial={{ opacity: 0, y: 8 }}
-                                                animate={{ opacity: 1, y: 0 }}
-                                                transition={{ delay: 0.2 }}
-                                                className="flex items-center gap-4 p-4 rounded-2xl bg-gradient-to-r from-[var(--color-warning)]/[0.06] to-transparent border border-[var(--color-warning)]/10"
-                                            >
-                                                <div className="w-10 h-10 rounded-xl bg-[var(--color-warning)]/10 flex items-center justify-center flex-shrink-0">
-                                                    <TrendingUp className="w-5 h-5 text-[var(--color-warning)]" />
+                                            {/* Compact boost pill */}
+                                            <div className="flex items-center gap-2 pt-1">
+                                                <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[var(--color-warning)]/[0.06] border border-[var(--color-warning)]/10">
+                                                    <TrendingUp className="w-3 h-3 text-[var(--color-warning)]" />
+                                                    <span className="text-[11px] font-medium text-[var(--color-warning)]">
+                                                        {githubLink || portfolioLink ? "Response rate +2x" : "Add links for +2x response rate"}
+                                                    </span>
                                                 </div>
-                                                <div>
-                                                    <p className="text-xs font-bold text-[var(--color-warning)]">
-                                                        {githubLink || portfolioLink ? "Response rate boosted!" : "Add links to boost response rate"}
-                                                    </p>
-                                                    <p className="text-[11px] text-[var(--color-text-tertiary)]">
-                                                        {githubLink || portfolioLink
-                                                            ? "Your applications will now include relevant links — recruiters love this."
-                                                            : "Recruiters are 2x more likely to respond when they can see your work."}
-                                                    </p>
-                                                </div>
-                                            </motion.div>
+                                            </div>
                                         </motion.div>
                                     )}
 
@@ -581,82 +551,96 @@ export default function OnboardingPage() {
 
                             {/* ═══ Step 4: Gmail SMTP ═══ */}
                             {currentStep === 4 && (
-                                <div className="space-y-5">
-                                    {/* Almost there banner */}
+                                <div className="space-y-4">
+                                    {/* Combined banner: Almost there + Security */}
                                     <motion.div
                                         initial={{ opacity: 0, scale: 0.96 }}
                                         animate={{ opacity: 1, scale: 1 }}
-                                        className="flex items-center gap-3 px-5 py-3.5 rounded-2xl bg-gradient-to-r from-[var(--color-success)]/[0.06] to-transparent border border-[var(--color-success)]/15"
+                                        className="flex items-center gap-3 px-4 py-3 rounded-2xl bg-gradient-to-r from-[var(--color-success)]/[0.06] via-transparent to-[var(--color-brand-primary)]/[0.04] border border-[var(--color-border-subtle)]"
                                     >
-                                        <PartyPopper className="w-5 h-5 text-[var(--color-success)] flex-shrink-0" />
-                                        <div>
+                                        <div className="w-8 h-8 rounded-lg bg-[var(--color-success)]/10 flex items-center justify-center flex-shrink-0">
+                                            <PartyPopper className="w-4 h-4 text-[var(--color-success)]" />
+                                        </div>
+                                        <div className="flex-1 min-w-0">
                                             <p className="text-xs font-bold text-[var(--color-success)]">Almost there — one last step!</p>
-                                            <p className="text-[11px] text-[var(--color-text-tertiary)]">Connect your Gmail and your AI agent starts working tomorrow morning.</p>
+                                            <p className="text-[11px] text-[var(--color-text-tertiary)]">
+                                                Connect your Gmail and your AI agent starts tomorrow.
+                                            </p>
+                                        </div>
+                                        <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-[var(--color-brand-primary)]/[0.06] flex-shrink-0">
+                                            <Shield className="w-3 h-3 text-[var(--color-brand-primary)]" />
+                                            <span className="text-[10px] font-semibold text-[var(--color-brand-primary)]">AES-256</span>
                                         </div>
                                     </motion.div>
 
-                                    {/* Security info */}
-                                    <div className="flex items-start gap-4 p-5 rounded-2xl bg-[var(--color-brand-primary)]/[0.04] border border-[var(--color-brand-primary)]/10">
-                                        <div className="w-10 h-10 rounded-xl bg-[var(--color-brand-primary)]/10 flex items-center justify-center flex-shrink-0">
-                                            <Shield className="w-5 h-5 text-[var(--color-brand-primary)]" />
-                                        </div>
-                                        <div>
-                                            <p className="text-sm font-semibold text-[var(--color-brand-dark)] mb-0.5">Encrypted with AES-256</p>
-                                            <p className="text-xs text-[var(--color-text-secondary)] leading-relaxed">
-                                                We use a Gmail App Password — not your real password. Revoke it from Google anytime.{" "}
-                                                <a href="https://support.google.com/accounts/answer/185833" target="_blank" rel="noopener noreferrer" className="text-[var(--color-brand-primary)] font-medium hover:underline">
-                                                    How to generate one →
-                                                </a>
-                                            </p>
-                                        </div>
-                                    </div>
-
-                                    <div className="space-y-4">
-                                        <div className="space-y-2">
+                                    {/* Side-by-side inputs */}
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                        <div className="space-y-1.5">
                                             <Label className="text-sm font-medium text-[var(--color-text-primary)]">Gmail Address</Label>
                                             <div className="relative">
                                                 <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--color-text-tertiary)]" />
                                                 <Input placeholder="you@gmail.com" value={smtpEmail} onChange={(e) => { setSmtpEmail(e.target.value); setSmtpVerified(false); setSmtpError(""); }}
-                                                    className="pl-10 h-12 rounded-xl border-[var(--color-border-subtle)] focus:border-[var(--color-brand-primary)] focus:ring-[var(--color-brand-primary)]/20 bg-[var(--color-surface)]" />
+                                                    className="pl-10 h-11 rounded-xl border-[var(--color-border-subtle)] focus:border-[var(--color-brand-primary)] focus:ring-[var(--color-brand-primary)]/20 bg-[var(--color-surface)]" />
                                             </div>
                                         </div>
-                                        <div className="space-y-2">
-                                            <Label className="text-sm font-medium text-[var(--color-text-primary)]">App Password</Label>
+                                        <div className="space-y-1.5">
+                                            <Label className="text-sm font-medium text-[var(--color-text-primary)]">
+                                                App Password
+                                                <a href="https://support.google.com/accounts/answer/185833" target="_blank" rel="noopener noreferrer"
+                                                    className="ml-1.5 text-[11px] font-medium text-[var(--color-brand-primary)] hover:underline">
+                                                    How to get one →
+                                                </a>
+                                            </Label>
                                             <div className="relative">
                                                 <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--color-text-tertiary)]" />
                                                 <Input type="password" placeholder="xxxx xxxx xxxx xxxx" value={smtpPassword} onChange={(e) => { setSmtpPassword(e.target.value); setSmtpVerified(false); setSmtpError(""); }}
-                                                    className="pl-10 h-12 rounded-xl border-[var(--color-border-subtle)] focus:border-[var(--color-brand-primary)] focus:ring-[var(--color-brand-primary)]/20 bg-[var(--color-surface)]" />
+                                                    className="pl-10 h-11 rounded-xl border-[var(--color-border-subtle)] focus:border-[var(--color-brand-primary)] focus:ring-[var(--color-brand-primary)]/20 bg-[var(--color-surface)]" />
                                             </div>
-                                            <p className="text-[11px] text-[var(--color-text-tertiary)] flex items-center gap-1.5">
-                                                <Lock className="w-3 h-3" /> 16-character App Password from Google — not your regular password
+                                            <p className="text-[10px] text-[var(--color-text-tertiary)] flex items-center gap-1">
+                                                <Lock className="w-2.5 h-2.5" /> 16-character Google App Password — not your regular password
                                             </p>
                                         </div>
                                     </div>
 
-                                    {/* Verify Connection Button */}
-                                    <Button
-                                        onClick={handleSmtpVerify}
-                                        disabled={!smtpEmail || !smtpPassword || smtpVerifying || smtpVerified}
-                                        className={`w-full h-11 rounded-xl text-sm font-semibold transition-all ${
-                                            smtpVerified
-                                                ? "bg-[var(--color-success)] text-white cursor-default"
-                                                : "bg-[var(--color-surface)] border border-[var(--color-border-subtle)] text-[var(--color-text-primary)] hover:border-[var(--color-brand-primary)] hover:bg-[var(--color-brand-primary)]/5"
-                                        }`}
-                                    >
-                                        {smtpVerifying ? (
-                                            <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Verifying connection...</>
-                                        ) : smtpVerified ? (
-                                            <><CheckCircle2 className="w-4 h-4 mr-2" /> Connection verified</>
-                                        ) : (
-                                            <><Zap className="w-4 h-4 mr-2" /> Verify Connection</>
-                                        )}
-                                    </Button>
+                                    {/* Verify + info row */}
+                                    <div className="flex items-center gap-3 flex-wrap">
+                                        <Button
+                                            onClick={handleSmtpVerify}
+                                            disabled={!smtpEmail || !smtpPassword || smtpVerifying || smtpVerified}
+                                            className={`h-10 rounded-xl px-6 text-sm font-semibold transition-all shadow-sm hover:shadow-md ${
+                                                smtpVerified
+                                                    ? "bg-[var(--color-success)] text-white cursor-default"
+                                                    : "bg-[var(--color-brand-primary)] hover:bg-[var(--color-brand-hover)] text-white"
+                                            }`}
+                                        >
+                                            {smtpVerifying ? (
+                                                <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Verifying...</>
+                                            ) : smtpVerified ? (
+                                                <><CheckCircle2 className="w-4 h-4 mr-2" /> Verified</>
+                                            ) : (
+                                                <><Zap className="w-4 h-4 mr-2" /> Verify Connection</>
+                                            )}
+                                        </Button>
+
+                                        {/* Inline info pills */}
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                            {[
+                                                { icon: Send, text: "20 emails/day", color: "text-[var(--color-brand-primary)]" },
+                                                { icon: Mail, text: "98% inbox rate", color: "text-[var(--color-success)]" },
+                                            ].map((item) => (
+                                                <div key={item.text} className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[var(--color-surface)] border border-[var(--color-border-subtle)]">
+                                                    <item.icon className={`w-3 h-3 ${item.color}`} />
+                                                    <span className="text-[10px] font-medium text-[var(--color-text-tertiary)]">{item.text}</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
 
                                     {/* Error message */}
                                     {smtpError && (
                                         <motion.div initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }}
-                                            className="flex items-start gap-3 p-4 rounded-xl bg-red-50 border border-red-200">
-                                            <div className="w-5 h-5 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0 mt-0.5">
+                                            className="flex items-center gap-3 p-3 rounded-xl bg-red-50 border border-red-200">
+                                            <div className="w-5 h-5 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
                                                 <span className="text-red-600 text-xs font-bold">!</span>
                                             </div>
                                             <div>
@@ -665,26 +649,6 @@ export default function OnboardingPage() {
                                             </div>
                                         </motion.div>
                                     )}
-
-                                    {/* What happens next */}
-                                    <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}
-                                        className="p-5 rounded-2xl bg-[var(--color-surface)] border border-[var(--color-border-subtle)]">
-                                        <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-[var(--color-brand-primary)] mb-3">What happens next</p>
-                                        <div className="space-y-2.5">
-                                            {[
-                                                { icon: Send, text: "20 personalized emails sent every morning", color: "text-[var(--color-brand-primary)]" },
-                                                { icon: Mail, text: "98% land in recruiter's Primary inbox", color: "text-[var(--color-success)]" },
-                                                { icon: Sparkles, text: "Wake up to interview invites in your inbox", color: "text-[var(--color-warning)]" },
-                                            ].map((item, i) => (
-                                                <motion.div key={item.text} initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.25 + i * 0.1 }} className="flex items-center gap-3">
-                                                    <div className="w-7 h-7 rounded-lg bg-white border border-[var(--color-border-subtle)] flex items-center justify-center flex-shrink-0">
-                                                        <item.icon className={`w-3.5 h-3.5 ${item.color}`} />
-                                                    </div>
-                                                    <span className="text-xs text-[var(--color-text-secondary)]">{item.text}</span>
-                                                </motion.div>
-                                            ))}
-                                        </div>
-                                    </motion.div>
                                 </div>
                             )}
                         </motion.div>

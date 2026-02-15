@@ -62,3 +62,6 @@ dist/
 firebase-debug.log
 .firebase/
 service-account.json
+
+# Playwright MCP
+.playwright-mcp/

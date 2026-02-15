@@ -65,10 +65,7 @@
   }
 
   .text-gradient {
-    background: linear-gradient(135deg, #635BFF 0%, #00D4FF 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
+    color: var(--color-brand-primary);
   }
 
   .shadow-lift {
