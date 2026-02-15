@@ -2,7 +2,7 @@ import httpx
 import time
 import os
 
-BASE_URL = "http://127.0.0.1:8000"
+BASE_URL = "http://127.0.0.1:8001"
 API_URL = f"{BASE_URL}/api"
 
 def print_pass(message):

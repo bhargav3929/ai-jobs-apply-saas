@@ -2,7 +2,7 @@
 
 import { useState, useCallback } from "react";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000/api";
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8001/api";
 
 const JOB_CATEGORIES = [
     "Software Developer",

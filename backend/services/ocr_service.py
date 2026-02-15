@@ -2,6 +2,7 @@ import base64
 import json
 import logging
 import re
+import time
 import requests
 from openai import OpenAI
 from core.settings import MISTRAL_API_KEY, GROQ_API_KEY
@@ -9,6 +10,8 @@ from core.settings import MISTRAL_API_KEY, GROQ_API_KEY
 logger = logging.getLogger("ocr_service")
 
 MISTRAL_OCR_URL = "https://api.mistral.ai/v1/ocr"
+MISTRAL_OCR_MAX_RETRIES = 3
+MISTRAL_OCR_BASE_DELAY = 1.0  # seconds, doubled on each retry
 
 
 def _normalize_markdown(text: str) -> str:
@@ -137,10 +140,20 @@ def extract_candidate_name(resume_text: str) -> str | None:
 
 
 def extract_text_with_ocr(pdf_bytes: bytes) -> str:
-    """
-    Extract text from a PDF using Mistral OCR API (vision-based).
-    Returns cleaned text with normalized formatting.
-    Raises Exception if OCR fails.
+    """Extract text from a PDF using Mistral OCR API (vision-based).
+
+    Retries up to MISTRAL_OCR_MAX_RETRIES times with exponential backoff
+    on transient errors (5xx, timeouts, rate limits).
+
+    Args:
+        pdf_bytes: Raw PDF file content.
+
+    Returns:
+        Cleaned text with normalized formatting.
+
+    Raises:
+        ValueError: If the API key is not configured.
+        Exception: If OCR fails after all retries.
     """
     if not MISTRAL_API_KEY:
         raise ValueError("MISTRAL_API_KEY not configured")
@@ -154,7 +167,6 @@ def extract_text_with_ocr(pdf_bytes: bytes) -> str:
             "type": "document_url",
             "document_url": data_url
         },
-        "include_image_base64": True
     }
 
     headers = {
@@ -162,34 +174,125 @@ def extract_text_with_ocr(pdf_bytes: bytes) -> str:
         "Authorization": f"Bearer {MISTRAL_API_KEY}"
     }
 
-    logger.info(f"Calling Mistral OCR API (pdf size={len(pdf_bytes)} bytes)")
-    response = requests.post(MISTRAL_OCR_URL, json=payload, headers=headers, timeout=90)
+    last_error: Exception | None = None
+    for attempt in range(1, MISTRAL_OCR_MAX_RETRIES + 1):
+        try:
+            logger.info(f"Calling Mistral OCR API attempt {attempt}/{MISTRAL_OCR_MAX_RETRIES} "
+                        f"(pdf size={len(pdf_bytes)} bytes)")
+            response = requests.post(
+                MISTRAL_OCR_URL, json=payload, headers=headers, timeout=90
+            )
 
-    if response.status_code != 200:
-        error_detail = response.text[:500]
-        logger.error(f"Mistral OCR failed: HTTP {response.status_code} - {error_detail}")
-        raise Exception(f"Mistral OCR API error: HTTP {response.status_code}")
+            # Non-retryable client errors (4xx except 429)
+            if 400 <= response.status_code < 500 and response.status_code != 429:
+                error_detail = response.text[:500]
+                logger.error(f"Mistral OCR client error: HTTP {response.status_code} - {error_detail}")
+                raise Exception(f"Mistral OCR API error: HTTP {response.status_code}")
 
-    result = response.json()
-    pages = result.get("pages", [])
+            # Retryable: 429 (rate limit) or 5xx (server error)
+            if response.status_code == 429 or response.status_code >= 500:
+                error_detail = response.text[:300]
+                logger.warning(f"Mistral OCR retryable error on attempt {attempt}: "
+                               f"HTTP {response.status_code} - {error_detail}")
+                last_error = Exception(f"Mistral OCR API error: HTTP {response.status_code}")
+                if attempt < MISTRAL_OCR_MAX_RETRIES:
+                    delay = MISTRAL_OCR_BASE_DELAY * (2 ** (attempt - 1))
+                    logger.info(f"Retrying Mistral OCR in {delay:.1f}s...")
+                    time.sleep(delay)
+                    continue
+                raise last_error
 
-    if not pages:
-        raise Exception("Mistral OCR returned no pages")
+            # Success
+            result = response.json()
+            pages = result.get("pages", [])
 
-    # Combine all page markdown
-    raw_text = "\n\n".join(page.get("markdown", "") for page in pages)
-    logger.info(f"Mistral OCR raw: {len(raw_text)} chars from {len(pages)} pages")
+            if not pages:
+                raise Exception("Mistral OCR returned no pages")
 
-    # Post-process: normalize markdown to clean resume text
-    cleaned_text = _normalize_markdown(raw_text)
+            raw_text = "\n\n".join(page.get("markdown", "") for page in pages)
+            logger.info(f"Mistral OCR raw: {len(raw_text)} chars from {len(pages)} pages")
 
-    # Try to extract candidate name for logging/debugging
-    name = extract_candidate_name(cleaned_text)
-    if name:
-        logger.info(f"Detected candidate name: {name}")
+            cleaned_text = _normalize_markdown(raw_text)
 
-    logger.info(f"Mistral OCR cleaned: {len(cleaned_text)} chars")
-    return cleaned_text
+            name = extract_candidate_name(cleaned_text)
+            if name:
+                logger.info(f"Detected candidate name: {name}")
+
+            logger.info(f"Mistral OCR cleaned: {len(cleaned_text)} chars")
+            return cleaned_text
+
+        except requests.exceptions.Timeout:
+            last_error = Exception("Mistral OCR API timed out after 90s")
+            logger.warning(f"Mistral OCR timeout on attempt {attempt}/{MISTRAL_OCR_MAX_RETRIES}")
+            if attempt < MISTRAL_OCR_MAX_RETRIES:
+                delay = MISTRAL_OCR_BASE_DELAY * (2 ** (attempt - 1))
+                logger.info(f"Retrying Mistral OCR in {delay:.1f}s...")
+                time.sleep(delay)
+                continue
+
+        except requests.exceptions.ConnectionError as e:
+            last_error = Exception(f"Mistral OCR connection error: {e}")
+            logger.warning(f"Mistral OCR connection error on attempt {attempt}: {e}")
+            if attempt < MISTRAL_OCR_MAX_RETRIES:
+                delay = MISTRAL_OCR_BASE_DELAY * (2 ** (attempt - 1))
+                logger.info(f"Retrying Mistral OCR in {delay:.1f}s...")
+                time.sleep(delay)
+                continue
+
+        except Exception:
+            # Non-retryable errors (client 4xx, parse errors, etc.) — re-raise immediately
+            raise
+
+    # All retries exhausted
+    raise last_error or Exception("Mistral OCR failed after all retries")
+
+
+def _validate_portfolio_url(contact: dict) -> dict:
+    """Check if the portfolio URL is likely a project URL rather than a personal site.
+
+    If the portfolio domain doesn't relate to the candidate's name and looks
+    like a product/project, moves it to otherLinks and sets portfolio to null.
+    """
+    portfolio = contact.get("portfolio")
+    if not portfolio:
+        return contact
+
+    name = (contact.get("name") or "").lower().strip()
+    if not name:
+        return contact
+
+    try:
+        from urllib.parse import urlparse
+        parsed = urlparse(portfolio)
+        domain = parsed.netloc.lower().replace("www.", "")
+        # Strip TLD for comparison (e.g., "johndoe.com" -> "johndoe")
+        domain_base = domain.rsplit(".", 1)[0] if "." in domain else domain
+    except Exception:
+        return contact
+
+    # Known personal portfolio hosting platforms — always valid as portfolio
+    personal_platforms = [
+        "github.io", "netlify.app", "vercel.app", "pages.dev",
+        "about.me", "carrd.co", "wixsite.com", "wordpress.com",
+        "squarespace.com", "webflow.io", "dev.to", "hashnode.dev",
+    ]
+    if any(platform in domain for platform in personal_platforms):
+        return contact
+
+    # Check if any part of the candidate's name appears in the domain
+    name_parts = [p for p in re.split(r'[\s.\-]+', name) if len(p) >= 3]
+    domain_matches_name = any(part in domain_base for part in name_parts)
+
+    if not domain_matches_name:
+        # Domain doesn't relate to candidate's name — likely a project URL
+        logger.info(f"Portfolio URL '{portfolio}' doesn't match candidate name '{name}' — moving to otherLinks")
+        other = contact.get("otherLinks", [])
+        if portfolio not in other:
+            other.append(portfolio)
+        contact["otherLinks"] = other[:5]
+        contact["portfolio"] = None
+
+    return contact
 
 
 def extract_contact_with_vision(pdf_bytes: bytes) -> dict | None:
@@ -252,7 +355,7 @@ Return ONLY valid JSON with this exact structure:
 {
   "name": "The candidate's full name exactly as shown",
   "email": "email address or null",
-  "phone": "phone number exactly as shown or null",
+  "phone": "COMPLETE phone number with country code exactly as shown (e.g. +91 7093707113) or null",
   "location": "city, state/country or null",
   "linkedin": "full LinkedIn URL or null",
   "github": "full GitHub URL or null",
@@ -262,11 +365,19 @@ Return ONLY valid JSON with this exact structure:
 
 IMPORTANT RULES:
 - Extract the NAME exactly as displayed (preserve casing)
-- For URLs: include the full URL as shown. If no https:// prefix is visible, add it.
-- LinkedIn URL format: https://linkedin.com/in/username
-- GitHub URL format: https://github.com/username
-- Portfolio is the candidate's PERSONAL website (not a project they built for someone else)
-- Do NOT confuse project URLs (apps the candidate built) with their personal portfolio
+- PHONE NUMBER (CRITICAL): Extract the COMPLETE phone number INCLUDING the country code prefix (+91, +1, +44, etc.). Do NOT strip the country code. If you see "+91 7093707113", return "+91 7093707113" — NOT just "7093707113".
+- LINKEDIN (CRITICAL): Look carefully in the header/contact area for LinkedIn URLs. They often appear as "LinkedIn: linkedin.com/in/username" or just "linkedin.com/in/username". Extract the full URL and add https:// prefix if missing. Return as "https://linkedin.com/in/username".
+- GITHUB (CRITICAL): Look carefully in the header/contact area for GitHub URLs. They often appear as "GitHub: github.com/username" or just "github.com/username". Extract the full URL and add https:// prefix if missing. Return as "https://github.com/username".
+- For ALL URLs: include the full URL as shown. If no https:// prefix is visible, add it.
+
+PORTFOLIO vs PROJECT URLs (CRITICAL):
+- Portfolio/personal website is ONLY found in the HEADER or CONTACT SECTION of the resume (the top area, near name/email/phone)
+- URLs that appear INSIDE experience descriptions, project descriptions, or body sections are PROJECT URLs — put them in otherLinks, NOT portfolio
+- If a URL appears next to a project name or company name or job title, it is a PROJECT URL, not a portfolio
+- Common personal portfolio patterns: firstname.dev, firstnamelastname.com, about.me/name, firstname.github.io
+- If a URL domain does NOT relate to the candidate's name and is NOT in the header/contact area, it is a PROJECT URL
+- When in doubt, set portfolio to null and put the URL in otherLinks
+
 - Look at the HEADER area carefully — name, email, phone, and links are usually at the top
 - Return null for any field you cannot find
 - Return ONLY the JSON, no other text"""
@@ -302,6 +413,9 @@ IMPORTANT RULES:
             (l if l.startswith("http") else f"https://{l}")
             for l in other[:5] if isinstance(l, str) and l.strip()
         ]
+
+        # Validate portfolio URL — move suspicious project URLs to otherLinks
+        result = _validate_portfolio_url(result)
 
         logger.info(f"Vision extraction result: name={result.get('name')}, "
                      f"email={result.get('email')}, phone={result.get('phone')}, "
@@ -345,10 +459,10 @@ Search the ENTIRE text thoroughly. Return ONLY valid JSON:
 {
   "name": "Full name or null",
   "email": "email@example.com or null",
-  "phone": "phone number or null",
+  "phone": "COMPLETE phone number with country code (e.g. +91 7093707113) or null",
   "location": "city, state/country or null",
-  "linkedin": "LinkedIn URL or null",
-  "github": "GitHub URL or null",
+  "linkedin": "Full LinkedIn URL (e.g. https://linkedin.com/in/username) or null",
+  "github": "Full GitHub URL (e.g. https://github.com/username) or null",
   "portfolio": "personal website URL or null",
   "otherLinks": ["other URLs"]
 }
@@ -356,9 +470,17 @@ Search the ENTIRE text thoroughly. Return ONLY valid JSON:
 RULES:
 - For name: Look for a standalone line with 2-4 capitalized words (often ALL CAPS)
 - For email: Look for anything with @ symbol
-- For phone: Look for digit sequences (7-15 digits, may have +, spaces, hyphens)
-- For URLs: Add https:// prefix if missing
-- Portfolio = candidate's PERSONAL website, NOT a project they built for clients
+- PHONE (CRITICAL): Look for digit sequences (7-15 digits, may have +, spaces, hyphens). ALWAYS preserve the international country code prefix (+91, +1, +44, etc.). If you see "+91 7093707113", return "+91 7093707113" — do NOT strip the "+91".
+- LINKEDIN (CRITICAL): Search the ENTIRE text for any mention of "linkedin.com/in/". Often appears as "LinkedIn: linkedin.com/in/username" or just the URL. Return the full URL with https:// prefix.
+- GITHUB (CRITICAL): Search the ENTIRE text for any mention of "github.com/". Often appears as "GitHub: github.com/username" or just the URL. Return the full URL with https:// prefix.
+- For all URLs: Add https:// prefix if missing
+
+PORTFOLIO vs PROJECT URLs (CRITICAL):
+- Portfolio URL should appear near the TOP of the text, near name/email/phone — NOT in the middle of a job or project description
+- If a URL is surrounded by project description text or appears under a company/project heading, it is a PROJECT URL — put it in otherLinks
+- Common personal portfolio patterns: firstname.dev, firstnamelastname.com, about.me/name, firstname.github.io
+- If the URL domain does NOT relate to the candidate's name, it is very likely a project URL, not a portfolio
+- When in doubt, set portfolio to null and put the URL in otherLinks
 - Return null for anything you truly cannot find"""
                 },
                 {
@@ -387,6 +509,9 @@ RULES:
             (l if l.startswith("http") else f"https://{l}")
             for l in other[:5] if isinstance(l, str) and l.strip()
         ]
+
+        # Validate portfolio URL — move suspicious project URLs to otherLinks
+        result = _validate_portfolio_url(result)
 
         logger.info(f"AI text contact extraction: name={result.get('name')}, "
                      f"email={result.get('email')}, phone={result.get('phone')}, "

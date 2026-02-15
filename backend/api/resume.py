@@ -34,33 +34,78 @@ def _download_resume_bytes(user_id: str, resume_url: str) -> bytes:
 
 def _get_resume_text(user_id: str, resume_url: str, pdf_bytes: bytes | None = None) -> str:
     """Extract text from the user's resume PDF.
-    Tries Mistral OCR first for best quality, falls back to pypdf.
-    Accepts optional pre-downloaded pdf_bytes to avoid double download."""
-    content = pdf_bytes or _download_resume_bytes(user_id, resume_url)
 
-    # Try Mistral OCR first (handles image-based PDFs, complex layouts)
+    Extraction order (best quality first):
+      1. Mistral OCR — handles image-based PDFs, complex layouts (has retry logic)
+      2. pymupdf (fitz) — handles more PDF types than pypdf
+      3. pypdf — last resort, basic text-layer extraction
+
+    Args:
+        user_id: Firebase user ID (for logging).
+        resume_url: Storage URL of the resume.
+        pdf_bytes: Optional pre-downloaded PDF bytes to avoid double download.
+
+    Returns:
+        Extracted resume text.
+
+    Raises:
+        HTTPException: If no method could extract any text.
+    """
+    content = pdf_bytes or _download_resume_bytes(user_id, resume_url)
+    ocr_attempted = False
+
+    # 1. Try Mistral OCR first (handles image-based PDFs, complex layouts)
     try:
         from services.ocr_service import extract_text_with_ocr
         text = extract_text_with_ocr(content)
+        ocr_attempted = True  # Only true if the API call was actually made
         if text.strip():
             logger.info(f"Using Mistral OCR text for user {user_id} ({len(text)} chars)")
             return text
+        logger.warning(f"Mistral OCR returned empty text for user {user_id}")
+    except ValueError:
+        # API key not configured — OCR was not actually attempted
+        logger.warning(f"OCR not available for user {user_id}: API key not configured")
     except Exception as e:
-        logger.warning(f"Mistral OCR failed, falling back to pypdf: {e}")
+        ocr_attempted = True  # OCR was attempted but failed
+        logger.warning(f"Mistral OCR failed for user {user_id}: {e}")
 
-    # Fallback to pypdf
-    from pypdf import PdfReader
-    from io import BytesIO
-    reader = PdfReader(BytesIO(content))
-    text = ""
-    for page in reader.pages:
-        text += page.extract_text() or ""
+    # 2. Try pymupdf (fitz) — handles more formats than pypdf
+    try:
+        import fitz
+        doc = fitz.open(stream=content, filetype="pdf")
+        text = ""
+        for page in doc:
+            text += page.get_text() or ""
+        doc.close()
+        if text.strip():
+            logger.info(f"Using pymupdf text for user {user_id} ({len(text)} chars)")
+            return text
+        logger.warning(f"pymupdf returned empty text for user {user_id}")
+    except Exception as e:
+        logger.warning(f"pymupdf extraction failed for user {user_id}: {e}")
 
-    if not text.strip():
-        raise HTTPException(status_code=422, detail="Could not extract text from PDF. The file may be image-based.")
+    # 3. Fallback to pypdf
+    try:
+        from pypdf import PdfReader
+        reader = PdfReader(BytesIO(content))
+        text = ""
+        for page in reader.pages:
+            text += page.extract_text() or ""
+        if text.strip():
+            logger.info(f"Using pypdf text for user {user_id} ({len(text)} chars)")
+            return text
+    except Exception as e:
+        logger.warning(f"pypdf extraction failed for user {user_id}: {e}")
 
-    logger.info(f"Using pypdf text for user {user_id} ({len(text)} chars)")
-    return text
+    # All methods failed
+    if ocr_attempted:
+        detail = ("Could not extract text from PDF. OCR was attempted but failed. "
+                   "The file may be corrupted or in an unsupported format.")
+    else:
+        detail = ("Could not extract text from PDF. The file may be image-based "
+                   "and the OCR service is currently unavailable. Please try again later.")
+    raise HTTPException(status_code=422, detail=detail)
 
 
 @router.get("/analyze")
@@ -100,68 +145,113 @@ async def analyze_resume(authorization: str = Header(None), force: bool = False)
         except Exception as e:
             logger.warning(f"Cache check failed: {e}")
 
-    # Download PDF bytes once — reused for text extraction + vision extraction
-    pdf_bytes = None
+    # Download PDF bytes — always needed for structure extraction
+    pdf_bytes = _download_resume_bytes(user_id, resume_url)
+
+    # Use text override for AI scoring if present, otherwise extract text from PDF
     resume_text_override = user_data.get("resumeTextOverride")
     if resume_text_override and resume_text_override.strip():
         resume_text = resume_text_override
         logger.info(f"Using resumeTextOverride for user {user_id}")
     else:
-        pdf_bytes = _download_resume_bytes(user_id, resume_url)
         resume_text = _get_resume_text(user_id, resume_url, pdf_bytes=pdf_bytes)
 
-    # ── AI-based contact extraction (no regex, all AI) ───────────────
-    # Priority: 1) Vision model (sees PDF layout), 2) AI text extraction
-    # Both are pure AI calls — no code-based regex detection at all.
-    ai_contact = None
-    try:
-        # Try vision model first (most accurate — sees visual layout)
-        if not pdf_bytes:
-            pdf_bytes = _download_resume_bytes(user_id, resume_url)
-        from services.ocr_service import extract_contact_with_vision
-        ai_contact = extract_contact_with_vision(pdf_bytes)
-        if ai_contact:
-            logger.info(f"Vision contact extraction succeeded for user {user_id}")
-    except Exception as e:
-        logger.warning(f"Vision contact extraction failed: {e}")
+    # ── NEW: Try structure-first pipeline (PyMuPDF extraction + scoring-only AI) ──
+    # Always attempt structure extraction from the original PDF, even if
+    # resumeTextOverride exists — the PDF is the source of truth for structure.
+    structure = None
+    analysis = None
+    contact_info = {}
 
-    if not ai_contact:
-        # Fallback: AI text extraction (works without pymupdf)
+    if pdf_bytes:
         try:
-            from services.ocr_service import extract_contact_with_ai
-            ai_contact = extract_contact_with_ai(resume_text)
-            if ai_contact:
-                logger.info(f"AI text contact extraction succeeded for user {user_id}")
+            from services.pdf_structure_extractor import extract_pdf_structure
+            structure = extract_pdf_structure(pdf_bytes)
+            if structure and structure.get("sections"):
+                logger.info(
+                    f"Structure extraction succeeded for user {user_id}: "
+                    f"{len(structure['sections'])} sections"
+                )
+
+                # Use scoring-only AI analysis (preserves exact structure)
+                analysis = analyzer.score_sections(
+                    sections=structure["sections"],
+                    contact_info=structure["contactInfo"],
+                    job_category=job_category,
+                )
+
+                # Preserve original header and section order from structure
+                analysis["originalHeader"] = structure["originalHeader"]
+                analysis["originalSectionOrder"] = structure["originalSectionOrder"]
+                analysis["contactInfo"] = structure["contactInfo"]
+                analysis["extractionMethod"] = "pymupdf_structure"
+
+                contact_info = structure["contactInfo"]
+                logger.info(f"Structure-first pipeline complete for user {user_id}")
         except Exception as e:
-            logger.warning(f"AI text contact extraction failed: {e}")
+            logger.warning(f"Structure extraction failed, falling back to text analysis: {e}")
+            structure = None
+            analysis = None
 
-    # Run AI analysis (text-based — sections, scores, etc.)
-    analysis = analyzer.analyze(resume_text, job_category)
+    # ── FALLBACK: Use existing text-based pipeline if structure extraction didn't work ──
+    if analysis is None:
+        # AI-based contact extraction (vision or text)
+        ai_contact = None
+        try:
+            if not pdf_bytes:
+                pdf_bytes = _download_resume_bytes(user_id, resume_url)
+            from services.ocr_service import extract_contact_with_vision
+            ai_contact = extract_contact_with_vision(pdf_bytes)
+            if ai_contact:
+                logger.info(f"Vision contact extraction succeeded for user {user_id}")
+        except Exception as e:
+            logger.warning(f"Vision contact extraction failed: {e}")
 
-    # ── Merge contact info: AI extraction > analysis contactInfo ───
-    # The dedicated AI contact extraction (vision or text) is more
-    # reliable than the analysis prompt which is spread across many tasks.
-    contact_info = analysis.get("contactInfo", {})
+        if not ai_contact:
+            try:
+                from services.ocr_service import extract_contact_with_ai
+                ai_contact = extract_contact_with_ai(resume_text)
+                if ai_contact:
+                    logger.info(f"AI text contact extraction succeeded for user {user_id}")
+            except Exception as e:
+                logger.warning(f"AI text contact extraction failed: {e}")
 
-    if ai_contact:
-        for field in ("name", "email", "phone", "location", "linkedin", "github", "portfolio"):
-            ai_val = ai_contact.get(field)
-            if ai_val:
-                contact_info[field] = ai_val
-        # Merge otherLinks
-        ai_others = ai_contact.get("otherLinks", [])
-        existing_others = contact_info.get("otherLinks", [])
-        merged_others = list({*existing_others, *ai_others})
-        contact_info["otherLinks"] = merged_others[:5]
+        # Run full AI analysis (text-based)
+        analysis = analyzer.analyze(resume_text, job_category)
+        analysis["extractionMethod"] = "text_analysis"
 
-    analysis["contactInfo"] = contact_info
+        # Merge contact info: AI extraction > analysis contactInfo
+        contact_info = analysis.get("contactInfo", {})
+        if ai_contact:
+            for field in ("name", "email", "phone", "location", "linkedin", "github"):
+                ai_val = ai_contact.get(field)
+                if ai_val:
+                    contact_info[field] = ai_val
+            ai_portfolio = ai_contact.get("portfolio")
+            if ai_portfolio:
+                contact_info["portfolio"] = ai_portfolio
+            else:
+                analysis_portfolio = contact_info.get("portfolio")
+                if analysis_portfolio:
+                    logger.info(f"Clearing suspicious portfolio URL from analysis: {analysis_portfolio}")
+                    other = contact_info.get("otherLinks", [])
+                    if analysis_portfolio not in other:
+                        other.append(analysis_portfolio)
+                    contact_info["otherLinks"] = other[:5]
+                    contact_info["portfolio"] = None
+            ai_others = ai_contact.get("otherLinks", [])
+            existing_others = contact_info.get("otherLinks", [])
+            merged_others = list({*existing_others, *ai_others})
+            contact_info["otherLinks"] = merged_others[:5]
+
+        analysis["contactInfo"] = contact_info
+
     logger.info(f"Final contact: name={contact_info.get('name')}, email={contact_info.get('email')}, "
                  f"phone={contact_info.get('phone')}, linkedin={contact_info.get('linkedin')}, "
-                 f"github={contact_info.get('github')}, portfolio={contact_info.get('portfolio')}")
+                 f"github={contact_info.get('github')}, portfolio={contact_info.get('portfolio')}, "
+                 f"method={analysis.get('extractionMethod')}")
 
     # ── Clean up false ATS issues now that we have real contact info ──
-    # The analysis AI often flags "missing contact info" because OCR text
-    # is garbled, but our dedicated extraction actually found everything.
     if contact_info.get("email") or contact_info.get("phone") or contact_info.get("name"):
         false_positive_keywords = [
             "missing contact", "no contact", "contact information",
@@ -179,7 +269,6 @@ async def analyze_resume(authorization: str = Header(None), force: bool = False)
             imp for imp in analysis.get("criticalImprovements", [])
             if not any(kw in imp.lower() for kw in false_positive_keywords)
         ]
-        # Boost ATS score since contact info IS present
         ats = analysis.get("atsScore", 50)
         ats_boost = (15 if contact_info.get("email") else 0) + (10 if contact_info.get("phone") else 0)
         analysis["atsScore"] = min(100, ats + ats_boost)
@@ -305,16 +394,24 @@ async def regenerate_text(authorization: str = Header(None)):
     combined_text = None
     final_sections = None  # Keep structured sections for PDF generation
     cached_contact_info = {}  # Contact info from cached analysis for PDF header
+    cached_original_header = None  # Original header from structure extraction
     try:
         cache_doc = db.collection("resume_analyses").document(user_id).get()
         if cache_doc.exists:
             cached = cache_doc.to_dict()
             cached_contact_info = cached.get("contactInfo", {})
+            cached_original_header = cached.get("analysis", {}).get("originalHeader")
             sections = cached.get("analysis", {}).get("sections", {})
+            # Use originalSectionOrder to preserve the candidate's intended order
+            # (Firestore maps don't guarantee key order)
+            section_order = cached.get("analysis", {}).get("originalSectionOrder", list(sections.keys()))
             if sections:
                 parts = []
                 built_sections = {}
-                for key, sec in sections.items():
+                for key in section_order:
+                    sec = sections.get(key)
+                    if not sec:
+                        continue
                     display_name = sec.get("displayName", key.replace("_", " ").title())
                     # Use edited content if available, otherwise keep original
                     content = edits.get(key, sec.get("content", ""))
@@ -379,29 +476,16 @@ async def regenerate_text(authorization: str = Header(None)):
             except Exception:
                 candidate_name = "Resume"
 
-        # Build contact line from cached analysis contactInfo + user data fallback
-        contact_parts = []
-        email = cached_contact_info.get("email") or user_data.get("email")
-        if email:
-            contact_parts.append(email)
-        phone = cached_contact_info.get("phone")
-        if phone:
-            contact_parts.append(phone)
-        location = cached_contact_info.get("location")
-        if location:
-            contact_parts.append(location)
-        # Links: LinkedIn, GitHub, Portfolio
+        # Build structured contact info dict for the PDF generator
         links = user_data.get("extractedLinks", {})
-        linkedin = cached_contact_info.get("linkedin") or links.get("linkedin")
-        if linkedin:
-            contact_parts.append(linkedin)
-        github = cached_contact_info.get("github") or links.get("github")
-        if github:
-            contact_parts.append(github)
-        portfolio = cached_contact_info.get("portfolio") or links.get("portfolio")
-        if portfolio:
-            contact_parts.append(portfolio)
-        contact_info = "  |  ".join(contact_parts) if contact_parts else ""
+        contact_info_for_pdf = {
+            "email": cached_contact_info.get("email") or user_data.get("email"),
+            "phone": cached_contact_info.get("phone"),
+            "location": cached_contact_info.get("location"),
+            "linkedin": cached_contact_info.get("linkedin") or links.get("linkedin"),
+            "github": cached_contact_info.get("github") or links.get("github"),
+            "portfolio": cached_contact_info.get("portfolio") or links.get("portfolio"),
+        }
 
         # Use structured sections if available, otherwise build from text
         if not final_sections:
@@ -410,7 +494,7 @@ async def regenerate_text(authorization: str = Header(None)):
         pdf_bytes = generate_resume_pdf(
             candidate_name=candidate_name,
             sections=final_sections,
-            contact_info=contact_info,
+            contact_info=contact_info_for_pdf,
         )
 
         # Upload to Firebase Storage (same path → overwrites original)
@@ -484,11 +568,13 @@ async def download_pdf(authorization: str = Header(None)):
     # Try to build PDF from cached analysis (matches regenerate_text logic)
     final_sections = None
     cached_contact_info = {}
+    cached_original_header = None
     try:
         cache_doc = db.collection("resume_analyses").document(user_id).get()
         if cache_doc.exists:
             cached = cache_doc.to_dict()
             cached_contact_info = cached.get("contactInfo", {})
+            cached_original_header = cached.get("analysis", {}).get("originalHeader")
             sections = cached.get("analysis", {}).get("sections", {})
 
             # Apply any pending edits
@@ -496,9 +582,14 @@ async def download_pdf(authorization: str = Header(None)):
             edits = edits_doc.to_dict() if edits_doc.exists else {}
             edits.pop("updatedAt", None)
 
+            # Use originalSectionOrder to preserve the candidate's intended order
+            section_order = cached.get("analysis", {}).get("originalSectionOrder", list(sections.keys()))
             if sections:
                 built = {}
-                for key, sec in sections.items():
+                for key in section_order:
+                    sec = sections.get(key)
+                    if not sec:
+                        continue
                     display_name = sec.get("displayName", key.replace("_", " ").title())
                     content = edits.get(key, sec.get("content", ""))
                     if content.strip():
@@ -523,40 +614,29 @@ async def download_pdf(authorization: str = Header(None)):
     # Build candidate name
     candidate_name = cached_contact_info.get("name") or user_data.get("name", "Resume")
 
-    # Build contact line
-    contact_parts = []
-    email = cached_contact_info.get("email") or user_data.get("email")
-    if email:
-        contact_parts.append(email)
-    phone = cached_contact_info.get("phone")
-    if phone:
-        contact_parts.append(phone)
-    location = cached_contact_info.get("location")
-    if location:
-        contact_parts.append(location)
+    # Build structured contact info dict for the PDF generator
     links = user_data.get("extractedLinks", {})
-    linkedin = cached_contact_info.get("linkedin") or links.get("linkedin")
-    if linkedin:
-        contact_parts.append(linkedin)
-    github = cached_contact_info.get("github") or links.get("github")
-    if github:
-        contact_parts.append(github)
-    portfolio = cached_contact_info.get("portfolio") or links.get("portfolio")
-    if portfolio:
-        contact_parts.append(portfolio)
-    contact_info_line = "  |  ".join(contact_parts) if contact_parts else ""
+    contact_info_for_pdf = {
+        "email": cached_contact_info.get("email") or user_data.get("email"),
+        "phone": cached_contact_info.get("phone"),
+        "location": cached_contact_info.get("location"),
+        "linkedin": cached_contact_info.get("linkedin") or links.get("linkedin"),
+        "github": cached_contact_info.get("github") or links.get("github"),
+        "portfolio": cached_contact_info.get("portfolio") or links.get("portfolio"),
+    }
 
     # Generate PDF
     from services.pdf_generator import generate_resume_pdf
     pdf_bytes = generate_resume_pdf(
         candidate_name=candidate_name,
         sections=final_sections,
-        contact_info=contact_info_line,
+        contact_info=contact_info_for_pdf,
     )
 
-    filename = f"{candidate_name.replace(' ', '_')}_Resume.pdf"
+    safe_name = re.sub(r'[^\w\-]', '_', candidate_name)
+    filename = f"{safe_name}_Resume.pdf"
     return StreamingResponse(
         BytesIO(pdf_bytes),
         media_type="application/pdf",
-        headers={"Content-Disposition": f"attachment; filename={filename}"},
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )

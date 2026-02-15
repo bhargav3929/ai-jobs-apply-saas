@@ -23,6 +23,9 @@ import core.firebase
 mock_db = MagicMock()
 core.firebase.db = mock_db
 
+import pytest
+
+@pytest.mark.asyncio
 async def test_end_to_end_flow():
     print("\n🚀 Starting End-to-End Workflow Verification...\n")
     

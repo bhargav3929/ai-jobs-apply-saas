@@ -129,20 +129,46 @@ async def upload_resume(resume: UploadFile = File(...), authorization: str = Hea
 
     try:
         # 1. Parse content for text + skills + links
-        # Try Mistral OCR first for better accuracy on complex layouts
+        # Extraction order: Mistral OCR → pymupdf → pypdf
         text = ""
+
+        # 1a. Try Mistral OCR (best quality, handles image-based PDFs)
         try:
             from services.ocr_service import extract_text_with_ocr
             text = extract_text_with_ocr(content)
-            logger.info(f"Resume text extracted via Mistral OCR ({len(text)} chars)")
+            if text.strip():
+                logger.info(f"Resume text extracted via Mistral OCR ({len(text)} chars)")
         except Exception as ocr_err:
-            logger.warning(f"Mistral OCR failed, using pypdf fallback: {ocr_err}")
+            logger.warning(f"Mistral OCR failed during upload: {ocr_err}")
+
+        # 1b. Try pymupdf (fitz) — handles more formats than pypdf
+        if not text.strip():
+            try:
+                import fitz
+                doc = fitz.open(stream=content, filetype="pdf")
+                fitz_text = ""
+                for page in doc:
+                    fitz_text += page.get_text() or ""
+                doc.close()
+                if fitz_text.strip():
+                    text = fitz_text
+                    logger.info(f"Resume text extracted via pymupdf ({len(text)} chars)")
+            except Exception as fitz_err:
+                logger.warning(f"pymupdf extraction failed during upload: {fitz_err}")
+
+        # 1c. Fallback to pypdf
+        if not text.strip():
+            try:
+                reader = PdfReader(BytesIO(content))
+                for page in reader.pages:
+                    text += page.extract_text() or ""
+                if text.strip():
+                    logger.info(f"Resume text extracted via pypdf ({len(text)} chars)")
+            except Exception as pypdf_err:
+                logger.warning(f"pypdf extraction failed during upload: {pypdf_err}")
 
         if not text.strip():
-            reader = PdfReader(BytesIO(content))
-            for page in reader.pages:
-                text += page.extract_text() or ""
-            logger.info(f"Resume text extracted via pypdf ({len(text)} chars)")
+            logger.warning(f"All text extraction methods returned empty for user {user['uid']}")
 
         # Extract links using AI for accuracy (catches obfuscated/formatted links)
         extracted_links = _extract_links_from_resume(text)

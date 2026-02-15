@@ -181,6 +181,9 @@ export interface ContactInfo {
 
 export interface ResumeAnalysis {
     sections: Record<string, ResumeSection>;
+    originalSectionOrder?: string[];
+    originalHeader?: string;
+    extractionMethod?: string;
     contactInfo?: ContactInfo;
     overallScore: number;
     atsScore: number;

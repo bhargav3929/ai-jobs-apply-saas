@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef, useCallback } from "react";
-import { FileText, Upload, AlertCircle, RefreshCw } from "lucide-react";
+import { FileText, Upload, AlertCircle, RefreshCw, FileWarning, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { analyzeResume, updateResumeSection, regenerateResumeText } from "@/lib/api";
 import { useAuth } from "@/contexts/auth-context";
@@ -93,6 +93,179 @@ function EmptyState({ onUpload }: { onUpload: () => void }) {
             >
                 PDF format, max 5MB
             </p>
+        </div>
+    );
+}
+
+/* ------------------------------------------------------------------ */
+/*  PDF extraction error helpers                                       */
+/* ------------------------------------------------------------------ */
+type PdfErrorKind = "corrupted" | "ocr_unavailable" | null;
+
+function classifyPdfError(msg: string): PdfErrorKind {
+    const lower = msg.toLowerCase();
+    const isPdfError =
+        lower.includes("extract text") ||
+        lower.includes("image-based") ||
+        lower.includes("ocr") ||
+        lower.includes("corrupted");
+    if (!isPdfError) return null;
+
+    // Transient — the OCR service was simply unreachable
+    if (lower.includes("unavailable") || lower.includes("try again later")) {
+        return "ocr_unavailable";
+    }
+    // Permanent — the file itself is the problem
+    return "corrupted";
+}
+
+function PdfExtractionError({
+    kind,
+    onReupload,
+    onRetry,
+}: {
+    kind: "corrupted" | "ocr_unavailable";
+    onReupload: () => void;
+    onRetry: () => void;
+}) {
+    const isTransient = kind === "ocr_unavailable";
+
+    return (
+        <div
+            className="mt-4 mb-4 rounded-xl overflow-hidden"
+            style={{
+                border: "1px solid var(--color-border-subtle)",
+                background: "var(--color-background)",
+                boxShadow: "var(--shadow-card)",
+            }}
+        >
+            {/* Accent top bar */}
+            <div
+                className="h-1"
+                style={{ background: isTransient ? "var(--color-warning)" : "var(--color-error)" }}
+            />
+
+            <div className="px-5 py-5 sm:px-6 sm:py-6 flex flex-col sm:flex-row gap-4">
+                {/* Icon */}
+                <div
+                    className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
+                    style={{
+                        background: isTransient
+                            ? "rgba(245,166,35,0.08)"
+                            : "rgba(237,95,116,0.08)",
+                    }}
+                >
+                    <FileWarning
+                        className="w-5 h-5"
+                        style={{
+                            color: isTransient ? "var(--color-warning)" : "var(--color-error)",
+                        }}
+                    />
+                </div>
+
+                {/* Content */}
+                <div className="flex-1 min-w-0">
+                    <h3
+                        className="text-sm font-bold leading-tight"
+                        style={{ color: "var(--color-brand-dark)" }}
+                    >
+                        {isTransient
+                            ? "PDF text extraction temporarily unavailable"
+                            : "Unable to read your PDF"}
+                    </h3>
+                    <p
+                        className="text-[13px] leading-relaxed mt-1.5"
+                        style={{ color: "var(--color-text-secondary)" }}
+                    >
+                        {isTransient
+                            ? "Your PDF appears to be image-based and our text recognition service is temporarily down. This usually resolves within a few minutes."
+                            : "We couldn't extract text from this file. It may be corrupted, password-protected, or saved in an unsupported format."}
+                    </p>
+
+                    {/* Guidance */}
+                    {!isTransient && (
+                        <ul
+                            className="text-[12px] leading-relaxed mt-3 space-y-1 pl-4"
+                            style={{ color: "var(--color-text-tertiary)", listStyleType: "disc" }}
+                        >
+                            <li>Re-export your resume as a text-based PDF (not a scanned image)</li>
+                            <li>Ensure the file is not password-protected</li>
+                            <li>Try a different PDF viewer&apos;s &ldquo;Save As&rdquo; or &ldquo;Print to PDF&rdquo;</li>
+                        </ul>
+                    )}
+
+                    {/* Actions */}
+                    <div className="flex flex-wrap gap-3 mt-4">
+                        {isTransient ? (
+                            <button
+                                onClick={onRetry}
+                                className="inline-flex items-center gap-1.5 text-sm font-semibold px-4 py-2 rounded-lg transition-all duration-150"
+                                style={{
+                                    color: "var(--color-warning)",
+                                    background: "rgba(245,166,35,0.06)",
+                                    border: "1px solid rgba(245,166,35,0.15)",
+                                }}
+                                onMouseEnter={(e) => {
+                                    e.currentTarget.style.background = "rgba(245,166,35,0.12)";
+                                }}
+                                onMouseLeave={(e) => {
+                                    e.currentTarget.style.background = "rgba(245,166,35,0.06)";
+                                }}
+                            >
+                                <RotateCcw className="w-3.5 h-3.5" />
+                                Try Again
+                            </button>
+                        ) : (
+                            <button
+                                onClick={onReupload}
+                                className="inline-flex items-center gap-1.5 text-sm font-semibold px-4 py-2 rounded-lg transition-all duration-150"
+                                style={{
+                                    color: "var(--color-background)",
+                                    background: "var(--color-brand-primary)",
+                                }}
+                                onMouseEnter={(e) => {
+                                    e.currentTarget.style.background = "var(--color-brand-hover)";
+                                }}
+                                onMouseLeave={(e) => {
+                                    e.currentTarget.style.background = "var(--color-brand-primary)";
+                                }}
+                            >
+                                <Upload className="w-3.5 h-3.5" />
+                                Re-upload Resume
+                            </button>
+                        )}
+
+                        {/* Secondary action — always show dismiss */}
+                        <button
+                            onClick={isTransient ? onReupload : onRetry}
+                            className="inline-flex items-center gap-1.5 text-sm font-medium px-4 py-2 rounded-lg transition-all duration-150"
+                            style={{
+                                color: "var(--color-text-secondary)",
+                                background: "transparent",
+                                border: "1px solid var(--color-border-subtle)",
+                            }}
+                            onMouseEnter={(e) => {
+                                e.currentTarget.style.background = "var(--color-surface)";
+                            }}
+                            onMouseLeave={(e) => {
+                                e.currentTarget.style.background = "transparent";
+                            }}
+                        >
+                            {isTransient ? (
+                                <>
+                                    <Upload className="w-3.5 h-3.5" />
+                                    Upload Different PDF
+                                </>
+                            ) : (
+                                <>
+                                    <RefreshCw className="w-3.5 h-3.5" />
+                                    Retry Analysis
+                                </>
+                            )}
+                        </button>
+                    </div>
+                </div>
+            </div>
         </div>
     );
 }
@@ -397,6 +570,31 @@ export default function ResumePage() {
         }
     }, []);
 
+    // Handle inline section edit from the View Resume dialog
+    const handleViewDialogSectionEdited = useCallback((sectionKey: string, newContent: string) => {
+        // Optimistically update local analysis state
+        setAnalysisData((prev) => {
+            if (!prev) return prev;
+            return {
+                ...prev,
+                analysis: {
+                    ...prev.analysis,
+                    sections: {
+                        ...prev.analysis.sections,
+                        [sectionKey]: {
+                            ...prev.analysis.sections[sectionKey],
+                            content: newContent,
+                        },
+                    },
+                },
+            };
+        });
+        // Re-analyze in background to refresh scores
+        analyzeResume(true)
+            .then((freshData) => setAnalysisData(freshData))
+            .catch(() => {});
+    }, []);
+
     // Upload success handler — clear stale data, refresh profile, then re-analyze
     const handleUploadSuccess = () => {
         setNoResume(false);
@@ -409,26 +607,47 @@ export default function ResumePage() {
     return (
         <div className="px-5 md:px-8 lg:px-10 xl:px-12 pb-12">
             {/* Error Banner */}
-            {error && (
-                <div
-                    className="flex items-center gap-3 px-4 py-3 rounded-xl mb-4 mt-4"
-                    style={{
-                        background: "rgba(245,166,35,0.06)",
-                        border: "1px solid rgba(245,166,35,0.15)",
-                    }}
-                >
-                    <AlertCircle className="w-4 h-4 flex-shrink-0" style={{ color: "#F5A623" }} />
-                    <p className="text-sm flex-1 font-medium" style={{ color: "var(--color-brand-dark)" }}>
-                        {error}
-                    </p>
-                    <button
-                        onClick={() => fetchAnalysis()}
-                        className="text-xs font-semibold flex items-center gap-1 px-3 py-1.5 rounded-lg transition-colors"
-                        style={{ color: "#F5A623" }}
+            {error && (() => {
+                const pdfErrorKind = classifyPdfError(error);
+                if (pdfErrorKind) {
+                    return (
+                        <PdfExtractionError
+                            kind={pdfErrorKind}
+                            onReupload={() => setUploadDialogOpen(true)}
+                            onRetry={() => fetchAnalysis()}
+                        />
+                    );
+                }
+                return (
+                    <div
+                        className="flex items-center gap-3 px-4 py-3 rounded-xl mb-4 mt-4"
+                        style={{
+                            background: "rgba(245,166,35,0.06)",
+                            border: "1px solid rgba(245,166,35,0.15)",
+                        }}
                     >
-                        <RefreshCw className="w-3 h-3" /> Retry
-                    </button>
-                </div>
+                        <AlertCircle className="w-4 h-4 flex-shrink-0" style={{ color: "#F5A623" }} />
+                        <p className="text-sm flex-1 font-medium" style={{ color: "var(--color-brand-dark)" }}>
+                            {error}
+                        </p>
+                        <button
+                            onClick={() => fetchAnalysis()}
+                            className="text-xs font-semibold flex items-center gap-1 px-3 py-1.5 rounded-lg transition-colors"
+                            style={{ color: "#F5A623" }}
+                        >
+                            <RefreshCw className="w-3 h-3" /> Retry
+                        </button>
+                    </div>
+                );
+            })()}
+
+            {/* Upload dialog for PDF error state (when analysisData is null) */}
+            {error && classifyPdfError(error) && !analysisData && !noResume && (
+                <ResumeUploadDialog
+                    open={uploadDialogOpen}
+                    onOpenChange={setUploadDialogOpen}
+                    onSuccess={handleUploadSuccess}
+                />
             )}
 
             {/* Loading State — also show skeleton when re-analyzing after a new upload */}
@@ -534,6 +753,7 @@ export default function ResumePage() {
                         candidateEmail={userProfile?.email}
                         contactInfo={analysisData.contactInfo || analysisData.analysis?.contactInfo}
                         onUpdateResume={handleUpdateResume}
+                        onSectionEdited={handleViewDialogSectionEdited}
                         metadata={{
                             filename: analysisData.metadata?.filename || userProfile?.resumeMetadata?.filename || "resume.pdf",
                             size: analysisData.metadata?.size || userProfile?.resumeMetadata?.size || 0,

@@ -1,6 +1,6 @@
 import { getAuth, onAuthStateChanged } from "firebase/auth";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000/api";
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8001/api";
 
 async function getAuthToken(): Promise<string | null> {
     const auth = getAuth();
@@ -133,7 +133,7 @@ export async function verifySmtp(email: string, password: string) {
             body: JSON.stringify({ smtpEmail: email, smtpPassword: password }),
         });
     } catch (networkError: any) {
-        throw new Error("Cannot reach server. Make sure the backend is running on localhost:8000.");
+        throw new Error("Cannot reach server. Make sure the backend is running on localhost:8001.");
     }
 
     if (!response.ok) {
