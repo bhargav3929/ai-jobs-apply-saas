@@ -79,7 +79,8 @@ def generate_email_with_ai(user: dict, job: dict) -> dict:
     logger.info(f"Calling Groq API (model=openai/gpt-oss-120b, postText length={len(post_text)})")
     client = OpenAI(
         api_key=GROQ_API_KEY,
-        base_url="https://api.groq.com/openai/v1"
+        base_url="https://api.groq.com/openai/v1",
+        timeout=60,
     )
 
     prompt = f"""You are writing a job application email on behalf of {user_name}.

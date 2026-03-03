@@ -115,13 +115,23 @@ export default function OnboardingPage() {
             if (!user) throw new Error("No user found");
             if (!db) throw new Error("Firestore not initialized");
 
-            try {
-                const timeoutPromise = new Promise((_, reject) => { setTimeout(() => reject(new Error("Timeout")), 5000); });
-                await Promise.race([
-                    updateDoc(doc(db, "users", user.uid), { jobCategory, skills: parsedSkills, onboardingCompleted: true, isActive: true }),
-                    timeoutPromise
-                ]);
-            } catch (error) { console.warn("Firestore save failed (non-critical)", error); }
+            let firestoreSaved = false;
+            for (let attempt = 0; attempt < 2; attempt++) {
+                try {
+                    const timeoutPromise = new Promise((_, reject) => { setTimeout(() => reject(new Error("Timeout")), 5000); });
+                    await Promise.race([
+                        updateDoc(doc(db, "users", user.uid), { jobCategory, skills: parsedSkills, onboardingCompleted: true, isActive: true }),
+                        timeoutPromise
+                    ]);
+                    firestoreSaved = true;
+                    break;
+                } catch (error) { console.warn(`Firestore save attempt ${attempt + 1} failed`, error); }
+            }
+            if (!firestoreSaved) {
+                alert("Could not save your profile. Please check your connection and try again.");
+                setLoading(false);
+                return;
+            }
 
             try { await startJobScrape(jobCategory, "Remote"); } catch (error) { console.error("Job scrape failed", error); }
 

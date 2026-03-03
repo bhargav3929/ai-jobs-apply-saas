@@ -17,7 +17,8 @@ class ResumeAnalyzer:
     def __init__(self):
         self.client = OpenAI(
             api_key=GROQ_API_KEY,
-            base_url="https://api.groq.com/openai/v1"
+            base_url="https://api.groq.com/openai/v1",
+            timeout=60,
         )
 
     def analyze(self, resume_text: str, job_category: str) -> dict:

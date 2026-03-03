@@ -1,12 +1,20 @@
 from fastapi import APIRouter, HTTPException, Header
 from fastapi.responses import StreamingResponse
 from io import BytesIO
+from typing import Literal
+from pydantic import BaseModel, Field
 from core.firebase import db
 from api.users import verify_token
 from services.resume_analyzer import ResumeAnalyzer
 from datetime import datetime, timezone, timedelta
 import logging
 import re
+
+
+class UpdateSectionRequest(BaseModel):
+    section: str = Field(..., min_length=1, max_length=100)
+    content: str = Field(..., min_length=1, max_length=15000)
+    action: Literal["replace", "enhance"] = "replace"
 
 logger = logging.getLogger("resume_api")
 router = APIRouter(prefix="/api/resume", tags=["resume"])
@@ -315,20 +323,14 @@ async def analyze_resume(authorization: str = Header(None), force: bool = False)
 
 
 @router.post("/update-section")
-async def update_section(data: dict, authorization: str = Header(None)):
+async def update_section(data: UpdateSectionRequest, authorization: str = Header(None)):
     """Update or AI-enhance a specific resume section."""
     user_token = await verify_token(authorization)
     user_id = user_token["uid"]
 
-    section = data.get("section")
-    content = data.get("content", "")
-    action = data.get("action", "replace")
-
-    if not section:
-        raise HTTPException(status_code=400, detail="Section name is required")
-
-    if not content.strip():
-        raise HTTPException(status_code=400, detail="Content cannot be empty")
+    section = data.section
+    content = data.content
+    action = data.action
 
     if action == "enhance":
         # Get user's job category for context
@@ -350,9 +352,6 @@ async def update_section(data: dict, authorization: str = Header(None)):
         # with edits substituted. Cache is invalidated by regenerate_text.
 
         return {"success": True, "section": section, "updatedContent": content, "action": "replaced"}
-
-    else:
-        raise HTTPException(status_code=400, detail="Action must be 'replace' or 'enhance'")
 
 
 @router.post("/regenerate-text")
@@ -626,12 +625,25 @@ async def download_pdf(authorization: str = Header(None)):
     }
 
     # Generate PDF
-    from services.pdf_generator import generate_resume_pdf
-    pdf_bytes = generate_resume_pdf(
-        candidate_name=candidate_name,
-        sections=final_sections,
-        contact_info=contact_info_for_pdf,
-    )
+    try:
+        from services.pdf_generator import generate_resume_pdf
+        pdf_bytes = generate_resume_pdf(
+            candidate_name=candidate_name,
+            sections=final_sections,
+            contact_info=contact_info_for_pdf,
+        )
+    except Exception as e:
+        logger.error(f"PDF generation failed for user {user_id}: {e}")
+        # Fall back to the stored PDF from storage
+        try:
+            pdf_bytes = _download_resume_bytes(user_id, resume_url)
+            return StreamingResponse(
+                BytesIO(pdf_bytes),
+                media_type="application/pdf",
+                headers={"Content-Disposition": "attachment; filename=resume.pdf"},
+            )
+        except Exception:
+            raise HTTPException(status_code=500, detail="PDF generation failed and no stored PDF available")
 
     safe_name = re.sub(r'[^\w\-]', '_', candidate_name)
     filename = f"{safe_name}_Resume.pdf"

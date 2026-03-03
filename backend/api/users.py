@@ -1,28 +1,17 @@
 from fastapi import APIRouter, HTTPException, Header, UploadFile, File
 from core.firebase import db
+from middleware.auth import verify_firebase_token as verify_token
 from utils.encryption import encryptor
 import uuid
 import re
 import json
 import logging
-import firebase_admin.auth as auth
 from datetime import datetime, timezone
 from openai import OpenAI
 from core.settings import GROQ_API_KEY
 
 logger = logging.getLogger("users_api")
 router = APIRouter(prefix="/api/user", tags=["users"])
-
-# Middleware-like dependency
-async def verify_token(authorization: str = Header(None)):
-    if not authorization:
-        raise HTTPException(status_code=401, detail="No authorization header")
-    try:
-        token = authorization.split("Bearer ")[1]
-        decoded = auth.verify_id_token(token)
-        return decoded
-    except Exception:
-        raise HTTPException(status_code=401, detail="Invalid token")
 
 @router.get("/profile")
 async def get_profile(authorization: str = Header(None)):
@@ -378,7 +367,8 @@ def _extract_links_from_resume(text: str) -> dict:
         try:
             client = OpenAI(
                 api_key=GROQ_API_KEY,
-                base_url="https://api.groq.com/openai/v1"
+                base_url="https://api.groq.com/openai/v1",
+                timeout=60,
             )
             response = client.chat.completions.create(
                 model="openai/gpt-oss-120b",
@@ -415,7 +405,8 @@ def _extract_skills_ai(text: str) -> list:
     try:
         client = OpenAI(
             api_key=GROQ_API_KEY,
-            base_url="https://api.groq.com/openai/v1"
+            base_url="https://api.groq.com/openai/v1",
+            timeout=60,
         )
         response = client.chat.completions.create(
             model="openai/gpt-oss-120b",

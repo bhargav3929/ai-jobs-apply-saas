@@ -426,6 +426,7 @@ export default function ResumePage() {
             setAnalysisData(merged);
             setAnalyzing(false);
         } catch {
+            setError("Failed to enhance section. Please try again.");
             setAnalyzing(false);
         } finally {
             setEnhancingSection(null);
@@ -538,6 +539,7 @@ export default function ResumePage() {
             setAnalysisData(merged);
             setAnalyzing(false);
         } catch {
+            setError("Failed to add keyword. Please try again.");
             setAnalyzing(false);
         } finally {
             setAddingKeyword(null);

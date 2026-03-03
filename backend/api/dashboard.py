@@ -1,8 +1,8 @@
 from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, HTTPException, Header
 from core.firebase import db
+from middleware.auth import verify_firebase_token as verify_token
 from google.cloud.firestore_v1.base_query import FieldFilter
-import firebase_admin.auth as auth
 
 # Use UTC everywhere for consistency — Railway runs in UTC, timestamps stored in UTC
 UTC = timezone.utc
@@ -10,16 +10,6 @@ UTC = timezone.utc
 IST = timezone(timedelta(hours=5, minutes=30))
 
 router = APIRouter(prefix="/api/dashboard", tags=["dashboard"])
-
-async def verify_token(authorization: str = Header(None)):
-    if not authorization:
-        raise HTTPException(status_code=401, detail="No authorization header")
-    try:
-        token = authorization.split("Bearer ")[1]
-        decoded = auth.verify_id_token(token)
-        return decoded
-    except Exception:
-        raise HTTPException(status_code=401, detail="Invalid token")
 
 
 def _parse_sent_at(sent_at_str: str) -> datetime | None:

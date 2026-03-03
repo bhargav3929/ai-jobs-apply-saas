@@ -11,10 +11,18 @@ UTC = timezone.utc
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
 ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin")
-ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin123")
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "")
+
+if not ADMIN_PASSWORD:
+    import logging
+    logging.getLogger("admin_api").warning(
+        "ADMIN_PASSWORD env var is not set. Admin endpoints will reject all requests."
+    )
 
 
 def verify_admin_basic(authorization: str = Header(None)):
+    if not ADMIN_PASSWORD:
+        raise HTTPException(status_code=503, detail="Admin not configured")
     if not authorization:
         raise HTTPException(status_code=401, detail="No authorization header")
     try:
